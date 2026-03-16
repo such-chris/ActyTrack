@@ -1,0 +1,1716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Acty Log" />
+<meta name="theme-color" content="#1a1a18" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>1994 Honda Acty</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiMTk5NCBIb25kYSBBY3R5IiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiIzFhMWExOCIsInRoZW1lX2NvbG9yIjoiIzFhMWExOCIsInN0YXJ0X3VybCI6Ii4ifQ==" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { height: 100%; overflow-y: scroll; -webkit-overflow-scrolling: touch; }
+  body { font-family: 'Courier New', monospace; background: #1a1a18; color: #e8e0c8; min-height: 100vh; padding: 24px 16px; padding-top: max(24px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #1a1a18; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  input, textarea, button { font-family: 'Courier New', monospace; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// ─── SERVICE WORKER (inline, for offline support) ───
+if ('serviceWorker' in navigator) {
+  const swCode = `
+    const CACHE_NAME = 'acty-v1';
+    const URLS_TO_CACHE = [
+      './',
+      './index.html',
+      'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js'
+    ];
+    self.addEventListener('install', e => {
+      e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(URLS_TO_CACHE)).then(() => self.skipWaiting()));
+    });
+    self.addEventListener('activate', e => {
+      e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+    });
+    self.addEventListener('fetch', e => {
+      e.respondWith(
+        caches.match(e.request).then(cached => {
+          if (cached) return cached;
+          return fetch(e.request).then(response => {
+            if (response && response.status === 200) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+            }
+            return response;
+          }).catch(() => cached);
+        })
+      );
+    });
+  `;
+  const blob = new Blob([swCode], { type: 'application/javascript' });
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl, { scope: './' }).catch(() => {
+    // Blob SW registration may fail due to scope restrictions — that's OK,
+    // the app still works, just without offline caching.
+    // For full offline support, save the SW as a separate file (sw.js) at the same directory.
+  });
+}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>
+  // Suppress Babel in-browser transformer warning
+  const _warn = console.warn;
+  console.warn = function(...args) {
+    if (args[0] && typeof args[0] === 'string' && args[0].includes('in-browser Babel')) return;
+    _warn.apply(console, args);
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+/* ─── PERSISTENCE (JSONBin cloud + localStorage fallback) ─── */
+const STORAGE_KEY = "acty_tracker_v2";
+const JSONBIN_KEY = "$2a$10$k8e6dDUkcBTWUYPEopWhEuKlQzn2yGacUCZugtl0JWrGJbzi.LC1i";
+const BIN_ID_KEY = "acty_bin_id";
+
+function loadLocal(key, fallback) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return fallback;
+    const data = JSON.parse(raw);
+    return data[key] !== undefined ? data[key] : fallback;
+  } catch { return fallback; }
+}
+
+function saveLocal(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+}
+
+// Cloud sync functions
+async function cloudSave(state) {
+  saveLocal(state); // always save locally first
+  const binId = localStorage.getItem(BIN_ID_KEY);
+  try {
+    if (binId) {
+      await fetch("https://api.jsonbin.io/v3/b/" + binId, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
+        body: JSON.stringify(state)
+      });
+    } else {
+      const res = await fetch("https://api.jsonbin.io/v3/b", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY, "X-Bin-Name": "acty-tracker" },
+        body: JSON.stringify(state)
+      });
+      const data = await res.json();
+      if (data?.metadata?.id) localStorage.setItem(BIN_ID_KEY, data.metadata.id);
+    }
+  } catch {} // fail silently, local save is the backup
+}
+
+async function cloudLoad() {
+  const binId = localStorage.getItem(BIN_ID_KEY);
+  if (!binId) return null;
+  try {
+    const res = await fetch("https://api.jsonbin.io/v3/b/" + binId + "/latest", {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const data = await res.json();
+    return data?.record || null;
+  } catch { return null; }
+}
+
+function loadState(key, fallback) { return loadLocal(key, fallback); }
+
+/* ─── DEFAULT DATA ─── */
+
+const defaultWorkQueue = [
+  { id: 1, section: "inspections", title: "Check battery voltage with multimeter", priority: "high", timing: "upcoming", notes: "Previous owner confirmed battery is brand new (early 2026). Still worth verifying with a multimeter since radio resets on stalls. Check resting voltage (key off, 10 min wait) — should be 12.6V+. Check charging voltage (engine running) — should be 13.5–14.5V. If charging voltage is off, the issue is likely the alternator, not the battery.", mileage: null, parts: ["Multimeter (grab from work)"], solutions: [] },
+  { id: 11, section: "inspections", title: "Timing belt — check history & contact previous owner", priority: "high", timing: "upcoming", notes: "E07A is interference — if the belt snaps, pistons hit valves and the engine is toast. Service interval is ~100,000 km / 60,000 mi, but age matters just as much. Belt rubber degrades even sitting still — this truck is 30+ years old. Contact previous owner, check for service sticker, look for Japanese inspection booklet (整備記録簿). If no record exists, schedule replacement ASAP.", mileage: null, parts: [], solutions: ["Contact previous owner — ask for timing belt service history", "Check engine bay for timing belt service sticker", "Look for Japanese maintenance booklet (整備記録簿) in glovebox", "If no history found → schedule timing belt + tensioner + water pump replacement"] },
+  { id: 20, section: "inspections", title: "Inspect front brake pads & rotors", priority: "high", timing: "upcoming", notes: "Pull a front wheel and check pad thickness — minimum ~2mm before replacement needed. Check rotor for scoring, grooves, or lip on the edge. Look for uneven wear which could indicate a stuck caliper slide pin.", mileage: null, parts: [], solutions: [] },
+  { id: 21, section: "inspections", title: "Inspect rear drum brakes & shoes", priority: "high", timing: "upcoming", notes: "Pull a rear drum and check shoe thickness. Look for glazing, oil contamination, or uneven wear. Check the wheel cylinder for leaks — any moisture around the boots means it's seeping.", mileage: null, parts: [], solutions: [] },
+  { id: 22, section: "inspections", title: "Inspect brake lines — rubber sections", priority: "high", timing: "upcoming", notes: "Check all rubber brake hoses for cracking, swelling, or softness. 30-year-old rubber lines can balloon under pressure or burst. Trace the hard lines too — look for rust, corrosion, or weeping at fittings.", mileage: null, parts: [], solutions: [] },
+  { id: 26, section: "inspections", title: "Inspect belts — alternator & accessories", priority: "medium", timing: "upcoming", notes: "Check for cracking, glazing, fraying, or missing chunks. Belt should deflect ~10mm when pressed with thumb. If cracked or glazed, replace.", mileage: null, parts: [], solutions: [] },
+  { id: 27, section: "inspections", title: "Inspect radiator & heater hoses", priority: "medium", timing: "upcoming", notes: "Squeeze all rubber coolant hoses. Should feel firm but pliable. If rock hard, mushy, swollen, or cracked — replace. Check clamps for rust and tightness.", mileage: null, parts: [], solutions: [] },
+  { id: 28, section: "inspections", title: "Inspect fuel lines & filter", priority: "medium", timing: "upcoming", notes: "Check rubber fuel lines for cracking or brittleness, especially near the carb and fuel filter. Old rubber fuel line gets brittle in heat. Replace fuel filter if no record of it being done.", mileage: null, parts: [], solutions: [] },
+  { id: 30, section: "inspections", title: "Check tire age — sidewall date codes", priority: "medium", timing: "upcoming", notes: "Find the 4-digit DOT date code on the sidewall. If tires are older than 6 years, replace regardless of tread depth. Hawaii heat accelerates rubber degradation.", mileage: null, parts: [], solutions: [] },
+  { id: 31, section: "inspections", title: "Check ball joints, tie rods & bushings", priority: "medium", timing: "upcoming", notes: "Jack up each corner and grab the tire at 12/6 then 3/9 — wiggle and feel for play or clunking. Check all visible rubber bushings for cracking. Bounce test each corner — should settle in one bounce.", mileage: null, parts: [], solutions: [] },
+  { id: 5, section: "inspections", title: "Inspect / lube shifter cable & linkage", priority: "medium", timing: "longterm", notes: "HA4 uses cable-operated shifter. Dry or sticky cables cause imprecise shifts. Part of the clicky 1st gear investigation.", mileage: null, parts: ["White lithium grease or marine grease", "Cable lube tool (optional)"], solutions: [] },
+  { id: 71, section: "inspections", title: "Inspect AC belt, compressor & clutch — squealing", priority: "low", timing: "thisweek", notes: "AC system is squealing. Inspect the AC belt for glazing, cracking, or improper tension. Check the compressor clutch — if it's not engaging or slipping, that's your squeal. Check the compressor itself for wobble or bearing noise. Low priority — AC is a luxury, mechanical stuff comes first.", mileage: null, parts: [], solutions: [] },
+  { id: 4, section: "maintenance", title: "Coolant flush + hose replacement + refill", priority: "high", timing: "upcoming", notes: "Full cooling system overhaul. Replacement hose kit ordered — wait for arrival. 1) Drain old water. 2) Replace all coolant hoses with new kit. 3) Flush system. 4) Refill with Honda Type-2 Blue Coolant. 5) Bleed/burp the system — long cooling lines on HA4 trap air easily. REMINDER: grab a piece of clear tubing and a cup from work for bleeding. This is a full day weekend project. Could combo with shift bushing install if time allows.", mileage: null, parts: ["Coolant hose replacement kit (ordered ✓)", "Honda Type-2 Blue Coolant (need to buy)", "Distilled water — 1 gallon (do NOT use tap water)", "Drain pan — at least 2 gallon capacity", "Funnel", "Clear tubing + cup (grab from work — for bleeding)", "Rags and gloves", "Jack stands if needed"], solutions: [] },
+  { id: 23, section: "maintenance", title: "Flush brake fluid", priority: "high", timing: "upcoming", notes: "Old brake fluid absorbs moisture over time, lowering boiling point and causing internal corrosion. Flush and replace with fresh DOT 3 or DOT 4. Bleed all four corners starting from the wheel furthest from the master cylinder.", mileage: null, parts: ["DOT 3 or DOT 4 brake fluid — 1 quart", "Clear tubing for bleeding", "Box wrench for bleeder valves", "Helper or one-man bleeder valve kit"], solutions: [] },
+  { id: 24, section: "maintenance", title: "Change transmission fluid (MTF)", priority: "high", timing: "upcoming", notes: "Probably never been changed. Old MTF contributes to notchy shifting — directly related to the 1st gear issue. Simple drain and fill. Use Honda MTF or API SE 10W-30. Capacity ~1.2 quarts. Loosen fill bolt FIRST before drain bolt. Use 3/8 ratchet for the square drain bolt.", mileage: null, parts: ["Honda MTF or API SE 10W-30 — 1.5 quarts", "3/8 ratchet wrench (fits square drain bolt)", "Drain pan"], solutions: [] },
+  { id: 25, section: "maintenance", title: "Change front differential fluid", priority: "medium", timing: "upcoming", notes: "Capacity is ~0.48 quarts. Use API GL-4 75W-85 gear oil (or Lucas GL-4/GL-5 75W-90 full synthetic). Fill until it overflows from the fill hole.", mileage: null, parts: ["GL-4 75W-85 or 75W-90 gear oil — 1 quart", "3/8 ratchet wrench", "Drain pan"], solutions: [] },
+  { id: 29, section: "maintenance", title: "Ignition tune-up — plugs, wires, cap, rotor", priority: "medium", timing: "longterm", notes: "Full ignition refresh. Willpowered Performance tune-up kit ($130) covers plugs, wires, and distributor cap. Pull spark plugs and read them — color tells you about mixture and combustion health. Buy when ready.", mileage: null, parts: ["Willpowered Performance tune-up kit — $130 (need to buy)"], solutions: [] },
+  { id: 12, section: "inspections", title: "Windshield washer — inspect nozzles & line", priority: "medium", timing: "thisweek", notes: "Motor sounds healthy and pumps fluid, but output is a dribble. Most likely a clogged nozzle — 30 years of mineral buildup. Could also be a kinked or cracked hose losing pressure before the nozzle. Inspect first, then decide if cleaning fixes it or if parts need to be ordered.", mileage: null, parts: [], solutions: [] },
+  { id: 70, section: "maintenance", title: "Shift bushing kit install", priority: "high", timing: "upcoming", notes: "Shift bushing kit ordered. Should tighten up shifter feel and may help with the notchy 1st gear entry. Could do same weekend as coolant flush + hose replacement if time allows, otherwise the following weekend.", mileage: null, parts: ["Shift bushing kit (ordered ✓)"], solutions: [] },
+  { id: 3, section: "monitoring", title: "Clicky / notchy 1st gear entry", priority: "high", timing: "upcoming", notes: "Likely clutch cable adjustment, shifter cable lube, or old MTF. Attack in that order. Check clutch pedal free play first — should be 10–15mm before resistance.", mileage: null, parts: ["Honda MTF fluid", "Cable lube spray (WD-40 Specialist or similar)"], solutions: [] },
+  { id: 13, section: "monitoring", title: "Rear driver-side CV boot — split, flinging grease", priority: "high", timing: "upcoming", notes: "Boot has a small split or crack along one edge — not a total blowout but flinging grease from centrifugal force. Joint likely still good if caught early. Monitor for clicking on turns. Clean area and check how much grease remains.", mileage: "88,734 km", parts: [], solutions: ["Quick fix: split boot kit + CV grease repack (no axle removal)", "Proper fix: pull axle, replace boot, repack grease", "If joint damaged: replace entire CV axle assembly"] },
+  { id: 60, section: "monitoring", title: "Pulls to the right — investigate", priority: "high", timing: "upcoming", notes: "Noticed on drive to work. Hard pull to the right. Most likely causes: stuck caliper or collapsed brake hose on right side, alignment, tire pressure imbalance, or worn suspension component. Check tire pressures first (30 seconds). Then prioritize right front brake inspection. Feel wheels after short drive — if right is hotter, it's a dragging brake.", mileage: null, parts: [], solutions: [] },
+  { id: 52, section: "installations", title: "Seat covers + sub + interior deep clean — combo install", priority: "medium", timing: "longterm", notes: "Do these together since seats come out for all three jobs. 1) Pull seats. 2) Vacuum and deep clean the entire interior — under seats, carpet, dash crevices, door pockets. 3) Build and mount sub box behind/under seat. 4) Run amp power wire from battery with inline fuse. 5) Install seat covers. 6) Reinstall seats. Sub amp should be class D under 200W RMS. Seat covers and subwoofer ordered. PREREQUISITE: confirm battery/alternator health first.", mileage: null, parts: ['8" or 10" sub driver (ordered ✓)', "Small mono class D amp ($80–150)", "RCA cables", "Power wire kit with inline fuse", "MDF for custom box", "Seat covers (ordered ✓)"], solutions: [] },
+];
+
+const defaultServiceLog = [
+  { id: 100, category: "Maintain", title: "Oil change + Fumoto valve install", date: "Mar 2026", mileage: "88,734 km", notes: "First oil change since purchase. Installed Fumoto drain valve at the same time — no more fumbling with drain plugs. Used 3 quarts NAPA Gold synthetic 10W-40, NAPA Gold 1358 filter. Honda spec is 10W-30 — switch next time. Shorter interval planned to flush 10W-40 sooner.", parts: ["NAPA Gold synthetic 10W-40 × 3 qt", "NAPA Gold 1358 oil filter", "Fumoto drain valve (installed ✓)"] },
+  { id: 103, category: "Maintain", title: "Battery replaced (prev. owner)", date: "Pre-purchase, 2025", mileage: "Unknown", notes: "Previous owner installed a brand new battery shortly before sale. Battery is on passenger side between the wheels. Cover is hand-tightened (no tools needed). Shares housing with coolant overflow tank.", parts: ["Battery (new)"] },
+  { id: 101, category: "Maintain", title: "Starter replaced (prev. owner)", date: "Pre-purchase, 2025", mileage: "Unknown", notes: "Previous owner noted starter is 'brand new'. No specific date given but likely within his ownership period (Sept 2022 – Feb 2026).", parts: ["Starter motor"] },
+  { id: 102, category: "Maintain", title: "Radiator replaced (prev. owner)", date: "Pre-purchase, 2025", mileage: "Unknown", notes: "Previous owner noted radiator is 'less than a year old' as of late Feb 2026. Combined with starter replacement, suggests possible overheating event. Currently running straight water, not coolant.", parts: ["Radiator"] },
+  { id: 104, category: "Maintain", title: "Tires replaced (prev. owner)", date: "Pre-purchase, 2025", mileage: "Unknown", notes: "Previous owner noted tires are 'less than a year old' as of late Feb 2026. Inflate to 35 PSI. Still worth checking sidewall date codes to confirm.", parts: ["Tires (4)"] },
+];
+
+/* ─── CONFIG ─── */
+const priorityConfig = { high: { label: "HIGH", color: "#c0392b" }, medium: { label: "MED", color: "#d68910" }, low: { label: "LOW", color: "#2e86c1" } };
+const priorityOrder = ["high", "medium", "low"];
+const timingConfig = { thisweek: { label: "This Week", color: "#c0392b", bg: "#c0392b11" }, upcoming: { label: "Upcoming", color: "#d68910", bg: "#d6891011" }, longterm: { label: "Long-term", color: "#2e86c1", bg: "#2e86c111" } };
+const sectionConfig = { inspections: { label: "Inspect", color: "#d68910" }, maintenance: { label: "Maintain", color: "#c0392b" }, monitoring: { label: "Monitor", color: "#3a7fc1" }, installations: { label: "Install", color: "#2ea84a" } };
+const sectionsList = ["inspections", "maintenance", "monitoring", "installations"];
+
+const defaultPurchases = [
+  { id: 1, item: "Timing belt kit + tensioner + water pump", cost: "", status: "tobuy", notes: "Need to confirm if timing belt has ever been replaced first", partsCategory: "Engine", partsType: "OEM" },
+  { id: 2, item: "DOT 3/4 brake fluid", cost: "~$10", status: "tobuy", notes: "For brake flush", partsCategory: "Brakes/Suspension", partsType: "OEM" },
+  { id: 3, item: "Honda Type-2 Blue Coolant", cost: "~$25", status: "tobuy", notes: "Buy before hose kit arrives — needed for coolant flush + hose replacement weekend", partsCategory: "Engine", partsType: "OEM" },
+  { id: 4, item: "Honda MTF or 10W-30 for trans", cost: "~$15", status: "tobuy", notes: "~1.5 quarts for transmission fluid change", partsCategory: "Drivetrain", partsType: "OEM" },
+  { id: 5, item: "GL-4 75W-85 gear oil", cost: "~$12", status: "tobuy", notes: "~1 quart for front diff", partsCategory: "Drivetrain", partsType: "OEM" },
+  { id: 6, item: "Willpowered Performance tune-up kit", cost: "$130", status: "tobuy", notes: "Spark plugs, wires, distributor cap. Longer-term purchase.", partsCategory: "Engine", partsType: "Aftermarket" },
+  { id: 7, item: "Fluid Film / rust inhibitor", cost: "~$15", status: "tobuy", notes: "Spray on all exposed metal, rack, undercarriage. Reapply every 6 months.", partsCategory: "Cosmetic", partsType: "Aftermarket" },
+  { id: 13, item: "Rearview mirror replacement", cost: "", status: "tobuy", notes: "", partsCategory: "Cosmetic", partsType: "OEM" },
+  { id: 8, item: "Coolant hose replacement kit", cost: "", status: "ordered", notes: "Once it arrives, do coolant flush + hose replacement weekend", partsCategory: "Engine", partsType: "OEM" },
+  { id: 9, item: "Shift bushing kit", cost: "", status: "ordered", notes: "Install same weekend as coolant or the following weekend", partsCategory: "Drivetrain", partsType: "Aftermarket" },
+  { id: 10, item: "Seat covers", cost: "", status: "ordered", notes: "Install with sub + interior deep clean", partsCategory: "Cosmetic", partsType: "Aftermarket" },
+  { id: 11, item: "Subwoofer driver", cost: "", status: "ordered", notes: "Install with seat covers + interior deep clean", partsCategory: "Electric", partsType: "Aftermarket" },
+  { id: 12, item: "Soundproofing material", cost: "", status: "ordered", notes: "For headliner, doors, and under seats", partsCategory: "Cosmetic", partsType: "Aftermarket" },
+];
+
+/* ─── HELPERS ─── */ /* v2 */
+function formatMileage(val) {
+  if (!val && val !== 0) return val;
+  const str = String(val);
+  const digits = str.replace(/[^0-9]/g, "");
+  if (!digits) return str;
+  const num = parseInt(digits, 10);
+  return num.toLocaleString() + " km";
+}
+
+function parseOdo(val) {
+  if (!val) return 0;
+  const digits = String(val).replace(/[^0-9]/g, "");
+  return digits ? parseInt(digits, 10) : 0;
+}
+
+function getRecurringDue(recurring, completedAtKm) {
+  if (!recurring) return null;
+  const result = {};
+  if (recurring.kmInterval && completedAtKm) {
+    result.dueAtKm = completedAtKm + recurring.kmInterval;
+  }
+  if (recurring.monthsInterval) {
+    const d = new Date();
+    d.setMonth(d.getMonth() + recurring.monthsInterval);
+    result.dueByDate = d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  }
+  return result;
+}
+
+function buildRecurring(choice, currentOdo, kmVal, monthsVal) {
+  if (!choice || choice === "none") return null;
+  const odo = parseOdo(currentOdo);
+  const kmInterval = (choice === "km" || choice === "both") && kmVal ? parseInt(String(kmVal).replace(/[^0-9]/g, ""), 10) : null;
+  const monthsInterval = (choice === "months" || choice === "both") && monthsVal ? parseInt(String(monthsVal).replace(/[^0-9]/g, ""), 10) : null;
+  if (!kmInterval && !monthsInterval) return null;
+  const r = { kmInterval: kmInterval || null, monthsInterval: monthsInterval || null };
+  const due = getRecurringDue(r, odo);
+  return { ...r, ...due };
+}
+
+function autoPromote(issues, currentOdo) {
+  const odo = parseOdo(currentOdo);
+  const now = new Date();
+  return issues.map(i => {
+    if (!i.recurring) return i;
+    const dueKm = i.recurring.dueAtKm;
+    const dueDate = i.recurring.dueByDate ? new Date(i.recurring.dueByDate) : null;
+    let newTiming = i.timing;
+    // km-based promotion
+    if (dueKm && odo > 0) {
+      const remaining = dueKm - odo;
+      if (remaining <= 1000) newTiming = "thisweek";
+      else if (remaining <= 6000) newTiming = "upcoming";
+    }
+    // date-based promotion
+    if (dueDate) {
+      const daysUntil = (dueDate - now) / (1000 * 60 * 60 * 24);
+      if (daysUntil <= 14 && newTiming !== "thisweek") newTiming = newTiming === "thisweek" ? "thisweek" : "thisweek";
+      else if (daysUntil <= 60 && newTiming === "longterm") newTiming = "upcoming";
+    }
+    return newTiming !== i.timing ? { ...i, timing: newTiming } : i;
+  });
+}
+
+/* ─── APP ─── */
+function ActyTracker() {
+  const [tab, setTab] = useState("queue");
+  const partsCategories = ["Engine", "Drivetrain", "Electric", "Brakes/Suspension", "Wheels/Tires", "Cosmetic"];
+  const partsCatColors = { "Engine": "#c0392b", "Drivetrain": "#d68910", "Electric": "#c9a84c", "Brakes/Suspension": "#2ea84a", "Wheels/Tires": "#2e86c1", "Cosmetic": "#7c3ac1" };
+  const partsTypes = ["OEM", "Aftermarket"];
+  const [expandedPartId, setExpandedPartId] = useState(null);
+  const [editingPartField, setEditingPartField] = useState(null);
+  const [partFieldText, setPartFieldText] = useState("");
+  const [partsFilter, setPartsFilter] = useState("All");
+  const defaultPartsList = [
+    { id: 1, name: "Kenwood KDC-X305 CD/BT stereo + door speakers", category: "Electric", type: "Aftermarket" },
+    { id: 2, name: "Backup camera", category: "Electric", type: "Aftermarket" },
+    { id: 3, name: "Bed mat", category: "Cosmetic", type: "Aftermarket" },
+    { id: 4, name: "Spray-lined bed", category: "Cosmetic", type: "Aftermarket" },
+    { id: 5, name: "Tinted windows", category: "Cosmetic", type: "Aftermarket" },
+    { id: 6, name: "Tarp", category: "Cosmetic", type: "Aftermarket" },
+    { id: 7, name: "Fumoto drain valve (installed Mar 2026)", category: "Engine", type: "Aftermarket" },
+  ];
+
+  const [issues, setIssuesRaw] = useState(() => loadState("issues", defaultWorkQueue));
+  const [serviceLog, setServiceLogRaw] = useState(() => loadState("serviceLog", defaultServiceLog));
+  const [vehicleOdo, setVehicleOdoRaw] = useState(() => loadState("vehicleOdo", "88,734 km"));
+  const [purchases, setPurchasesRaw] = useState(() => loadState("purchases", defaultPurchases));
+  const [aftermarketItems, setAftermarketItems] = useState(() => loadState("aftermarket", defaultPartsList));
+  const [timingFilter, setTimingFilter] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [openSections, setOpenSections] = useState({});
+  const [expandedId, setExpandedId] = useState(null);
+  const [editingNote, setEditingNote] = useState(null);
+  const [noteText, setNoteText] = useState("");
+  const [editingMileage, setEditingMileage] = useState(null);
+  const [mileageText, setMileageText] = useState("");
+  const [editingTitle, setEditingTitle] = useState(null);
+  const [titleText, setTitleText] = useState("");
+  const [logFilter, setLogFilter] = useState("All");
+  const [expandedLogId, setExpandedLogId] = useState(null);
+  const [editingLogField, setEditingLogField] = useState(null); // { id, field }
+  const [logFieldText, setLogFieldText] = useState("");
+  const [expandedPurchaseId, setExpandedPurchaseId] = useState(null);
+  const [editingPurchaseNote, setEditingPurchaseNote] = useState(null);
+  const [purchaseNoteText, setPurchaseNoteText] = useState("");
+  const [editingPurchaseName, setEditingPurchaseName] = useState(null);
+  const [purchaseNameText, setPurchaseNameText] = useState("");
+  const [infoOpen, setInfoOpen] = useState(true);
+  const [prevOwnerOpen, setPrevOwnerOpen] = useState(false);
+  const [aftermarketOpen, setAftermarketOpen] = useState(false);
+  const [contactsOpen, setContactsOpen] = useState(false);
+  const [editingField, setEditingField] = useState(null);
+  const [editingFieldValue, setEditingFieldValue] = useState("");
+  const [receivingId, setReceivingId] = useState(null);
+  const [doneId, setDoneId] = useState(null);
+  const [doneNote, setDoneNote] = useState("");
+  const [doneMileage, setDoneMileage] = useState("");
+  const [doneStep, setDoneStep] = useState(null); // "choose" | "log" | "maint" | "aftermarket"
+  const [newMaintTitle, setNewMaintTitle] = useState("");
+  const [newMaintNotes, setNewMaintNotes] = useState("");
+  const [newMaintParts, setNewMaintParts] = useState("");
+  const [donePartCategory, setDonePartCategory] = useState("Interior");
+  const [donePartType, setDonePartType] = useState("Aftermarket");
+  const [repeatChoice, setRepeatChoice] = useState(null); // null | "km" | "months" | "both" | "none"
+  const [repeatKm, setRepeatKm] = useState("");
+  const [repeatMonths, setRepeatMonths] = useState("");
+  const [addMode, setAddMode] = useState(null);
+  const [addTitle, setAddTitle] = useState("");
+  const [addNotes, setAddNotes] = useState("");
+  const [addSection, setAddSection] = useState("inspections");
+  const [addPriority, setAddPriority] = useState("medium");
+  const [addTiming, setAddTiming] = useState("upcoming");
+  const [addCost, setAddCost] = useState("");
+  const [addPartsCategory, setAddPartsCategory] = useState("Engine");
+  const [addPartsType, setAddPartsType] = useState("Aftermarket");
+  const [editingCost, setEditingCost] = useState(null);
+  const [costText, setCostText] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
+  const [deletingType, setDeletingType] = useState(null); // "task" | "purchase"
+  const [syncStatus, setSyncStatus] = useState("idle"); // "idle" | "saving" | "saved" | "offline"
+
+  // Load from cloud on mount
+  useEffect(() => {
+    cloudLoad().then(cloud => {
+      if (cloud) {
+        const loadedIssues = cloud.issues || defaultWorkQueue;
+        const loadedOdo = cloud.vehicleOdo || "88,734 km";
+        setIssuesRaw(autoPromote(loadedIssues, loadedOdo));
+        if (cloud.serviceLog) setServiceLogRaw(cloud.serviceLog);
+        if (cloud.vehicleOdo) setVehicleOdoRaw(cloud.vehicleOdo);
+        if (cloud.purchases) setPurchasesRaw(cloud.purchases);
+        if (cloud.aftermarket) setAftermarketItems(cloud.aftermarket);
+        saveLocal(cloud);
+        setSyncStatus("saved");
+      } else {
+        // No cloud data — auto-promote defaults
+        setIssuesRaw(prev => autoPromote(prev, vehicleOdo));
+      }
+    }).catch(() => setSyncStatus("offline"));
+  }, []);
+
+  // Auto-save with debounce (saves locally immediately, cloud after 2s of inactivity)
+  const saveTimerRef = React.useRef(null);
+  useEffect(() => {
+    const state = { issues, serviceLog, vehicleOdo, purchases, aftermarket: aftermarketItems };
+    saveLocal(state);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      setSyncStatus("saving");
+      cloudSave(state).then(() => setSyncStatus("saved")).catch(() => setSyncStatus("offline"));
+    }, 2000);
+  }, [issues, serviceLog, vehicleOdo, purchases, aftermarketItems]);
+
+  function setIssues(updater) { setIssuesRaw(updater); }
+  function setPurchases(updater) { setPurchasesRaw(updater); }
+
+  const filtered = issues.filter((i) => {
+    if (timingFilter !== "all" && i.timing !== timingFilter) return false;
+    if (sectionFilter !== "all" && i.section !== sectionFilter) return false;
+    if (priorityFilter !== "all" && i.priority !== priorityFilter) return false;
+    return true;
+  });
+  const thisweekCount = issues.filter(i => i.timing === "thisweek").length;
+  const upcomingCount = issues.filter(i => i.timing === "upcoming").length;
+  const longtermCount = issues.filter(i => i.timing === "longterm").length;
+
+  function cycleTiming(id, e) {
+    e.stopPropagation();
+    const order = ["thisweek", "upcoming", "longterm"];
+    setIssues(prev => prev.map(i => i.id !== id ? i : { ...i, timing: order[(order.indexOf(i.timing) + 1) % order.length] }));
+  }
+  function cyclePriority(id, e) {
+    e.stopPropagation();
+    setIssues(prev => prev.map(i => i.id !== id ? i : { ...i, priority: priorityOrder[(priorityOrder.indexOf(i.priority) + 1) % priorityOrder.length] }));
+  }
+
+  function startDone(id, e) {
+    e.stopPropagation();
+    const issue = issues.find(i => i.id === id);
+    setDoneId(id);
+    setDoneNote(issue?.notes || "");
+    setDoneMileage(issue?.mileage || vehicleOdo || "");
+    setNewMaintTitle("");
+    setNewMaintNotes(issue?.notes || "");
+    setNewMaintParts("");
+    setDonePartCategory(issue?.partsCategory || "Interior");
+    setDonePartType(issue?.partsType || "Aftermarket");
+    setRepeatChoice(issue?.recurring ? (issue.recurring.kmInterval && issue.recurring.monthsInterval ? "both" : issue.recurring.kmInterval ? "km" : issue.recurring.monthsInterval ? "months" : null) : null);
+    setRepeatKm(issue?.recurring?.kmInterval ? String(issue.recurring.kmInterval) : "");
+    setRepeatMonths(issue?.recurring?.monthsInterval ? String(issue.recurring.monthsInterval) : "");
+    if (issue?.section === "monitoring") {
+      // monitoring: just delete
+      setIssues(prev => prev.filter(i => i.id !== id));
+      setDoneId(null);
+      setExpandedId(null);
+    } else if (issue?.section === "inspections") {
+      setDoneStep("choose"); // passed or create maintenance
+    } else if (issue?.section === "maintenance") {
+      setDoneStep("log"); // log to service log
+    } else if (issue?.section === "installations") {
+      setDoneStep("log_install"); // log + option to add to aftermarket
+    }
+  }
+
+  function finishLogToService(issue) {
+    const fmtMileage = formatMileage(doneMileage) || issue.mileage || vehicleOdo;
+    if (doneMileage.trim()) setVehicleOdoRaw(formatMileage(doneMileage));
+    // Log to service
+    setServiceLogRaw(prev => [{
+      id: Date.now(), category: sectionConfig[issue.section]?.label || issue.section,
+      title: issue.title, date: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+      mileage: fmtMileage, notes: doneNote || issue.notes || "",
+      parts: issue.parts || []
+    }, ...prev]);
+    // Create recurring next task if repeat selected
+    const recurring = buildRecurring(repeatChoice, doneMileage || vehicleOdo, repeatKm, repeatMonths);
+    if (recurring) {
+      const dueLabel = recurring.dueAtKm ? formatMileage(recurring.dueAtKm) : recurring.dueByDate;
+      setIssues(prev => [
+        ...prev.filter(i => i.id !== issue.id),
+        { id: Date.now() + 1, section: issue.section, title: issue.title, priority: issue.priority, timing: "longterm",
+          notes: issue.notes || "", mileage: null, parts: issue.parts || [], solutions: issue.solutions || [],
+          recurring }
+      ]);
+    } else {
+      setIssues(prev => prev.filter(i => i.id !== issue.id));
+    }
+    // Auto-promote all tasks with new odo
+    if (doneMileage.trim()) {
+      setTimeout(() => {
+        setIssuesRaw(prev => autoPromote(prev, doneMileage));
+      }, 100);
+    }
+    setDoneId(null); setDoneStep(null); setExpandedId(null); setRepeatChoice(null);
+  }
+
+  function finishCreateMaintenance(issue) {
+    if (doneMileage.trim()) setVehicleOdoRaw(formatMileage(doneMileage));
+    // create maintenance task + optional purchases
+    setIssues(prev => [
+      ...prev.filter(i => i.id !== issue.id),
+      { id: Date.now(), section: "maintenance", title: newMaintTitle || ("Fix: " + issue.title), priority: issue.priority, timing: "upcoming", notes: newMaintNotes, mileage: null, parts: newMaintParts ? newMaintParts.split(",").map(s => s.trim()).filter(Boolean) : [], solutions: [] }
+    ]);
+    // add parts to purchase list if specified
+    if (newMaintParts.trim()) {
+      const newParts = newMaintParts.split(",").map(s => s.trim()).filter(Boolean);
+      setPurchasesRaw(prev => [...prev, ...newParts.map((p, i) => ({ id: Date.now() + i + 1, item: p, cost: "", priority: issue.priority, status: "tobuy", notes: "For: " + (newMaintTitle || issue.title) }))]);
+    }
+    // log inspection as done
+    setServiceLogRaw(prev => [{ id: Date.now() + 999, category: "Inspect", title: issue.title + " — needs work", date: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }), mileage: formatMileage(doneMileage) || issue.mileage || vehicleOdo, notes: doneNote || "Inspection found issues. Maintenance task created.", parts: [] }, ...prev]);
+    setDoneId(null); setDoneStep(null); setExpandedId(null);
+  }
+
+  function finishInstallWithAftermarket(issue) {
+    const note = doneNote ? " — " + doneNote : "";
+    const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    setAftermarketItems(prev => [...prev, {
+      id: Date.now(), name: issue.title + note,
+      category: donePartCategory, type: donePartType,
+      installedDate: dateStr
+    }]);
+    setIssues(prev => prev.filter(i => i.id !== issue.id));
+    setDoneId(null); setDoneStep(null); setExpandedId(null);
+  }
+  function saveNote(id, e) {
+    e.stopPropagation();
+    setIssues(prev => prev.map(i => i.id === id ? { ...i, notes: noteText } : i));
+    setEditingNote(null);
+  }
+  function saveMileage(id, e) {
+    e.stopPropagation();
+    setIssues(prev => prev.map(i => i.id === id ? { ...i, mileage: formatMileage(mileageText) } : i));
+    setEditingMileage(null);
+  }
+
+  const grouped = {};
+  sectionsList.forEach(s => { grouped[s] = filtered.filter(i => i.section === s); });
+
+  const filteredLog = serviceLog.filter(i => logFilter === "All" || i.category === logFilter);
+  const logCategories = ["All", ...Array.from(new Set(serviceLog.map(s => s.category)))];
+
+  const sh = { fontSize: 10, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 };
+  const btnS = (active, ac) => ({ background: active ? ac : "transparent", color: active ? "#1a1a18" : "#555", border: "1px solid " + (active ? ac : "#2e2e2a"), borderRadius: 3, padding: "3px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit" });
+
+  function renderCard(issue) {
+    const pc = priorityConfig[issue.priority], tc = timingConfig[issue.timing];
+    const sec = sectionConfig[issue.section];
+    const isExp = expandedId === issue.id, isEN = editingNote === issue.id, isEM = editingMileage === issue.id;
+    const isET = editingTitle === issue.id;
+    return (
+      <div key={issue.id} style={{ background: "#222220", border: "1px solid #2e2e2a", borderLeft: `3px solid ${sec.color}`, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+        <div onClick={() => setExpandedId(isExp ? null : issue.id)} style={{ padding: "11px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#f0e6c8" }}>{issue.title}</span>
+            <div style={{ fontSize: 10, color: tc.color, marginTop: 1, letterSpacing: 1 }}>
+              {tc.label}
+              {issue.recurring && issue.recurring.dueAtKm && (() => {
+                const remaining = issue.recurring.dueAtKm - parseOdo(vehicleOdo);
+                const overdue = remaining <= 0;
+                return <span style={{ color: overdue ? "#c0392b" : "#c9a84c", marginLeft: 8 }}>{overdue ? "overdue · was due " : "due "}@ {formatMileage(issue.recurring.dueAtKm)}</span>;
+              })()}
+              {issue.recurring && issue.recurring.dueByDate && !issue.recurring.dueAtKm && (
+                <span style={{ color: new Date(issue.recurring.dueByDate) < new Date() ? "#c0392b" : "#c9a84c", marginLeft: 8 }}>{new Date(issue.recurring.dueByDate) < new Date() ? "overdue · was due " : "due "}{issue.recurring.dueByDate}</span>
+              )}
+              {!issue.recurring && issue.mileage && <span style={{ color: "#c9a84c", marginLeft: 8 }}>@ {issue.mileage}</span>}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ fontSize: 9, color: pc.color, border: `1px solid ${pc.color}44`, borderRadius: 2, padding: "1px 5px", letterSpacing: 1 }}>{pc.label}</span>
+            <span onClick={e => { e.stopPropagation(); setDeletingId(issue.id); setDeletingType("task"); }}
+              style={{ fontSize: 14, color: "#555", cursor: "pointer", padding: "4px 4px", lineHeight: 1 }}>✕</span>
+          </div>
+        </div>
+        {/* Delete confirmation */}
+        {deletingId === issue.id && deletingType === "task" && (
+          <div style={{ background: "#2a1a1a", borderTop: "1px solid #c0392b44", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 11, color: "#c0392b" }}>Delete this item?</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={e => { e.stopPropagation(); setIssues(prev => prev.filter(i => i.id !== issue.id)); setDeletingId(null); }}
+                style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+              <button onClick={e => { e.stopPropagation(); setDeletingId(null); }}
+                style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {!isExp && (
+          <div onClick={() => setExpandedId(issue.id)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, marginTop: -4 }}>
+            <span style={{ fontSize: 10, color: "#333" }}>▼</span>
+          </div>
+        )}
+        {isExp && (
+          <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Title */}
+            <div>
+              <div style={sh}>Title</div>
+              {isET ? (
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input value={titleText} onChange={e => setTitleText(e.target.value)}
+                    style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                  <button onClick={e => { e.stopPropagation(); setIssues(prev => prev.map(i => i.id === issue.id ? { ...i, title: titleText } : i)); setEditingTitle(null); }}
+                    style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                  <button onClick={e => { e.stopPropagation(); setEditingTitle(null); }}
+                    style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: "#f0e6c8" }}>
+                  {issue.title}
+                  <span onClick={e => { e.stopPropagation(); setEditingTitle(issue.id); setTitleText(issue.title); }}
+                    style={{ marginLeft: 8, fontSize: 10, color: "#c9a84c", cursor: "pointer" }}>[edit]</span>
+                </div>
+              )}
+            </div>
+            {/* Mileage */}
+            <div>
+              <div style={sh}>Mileage</div>
+              {isEM ? (
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input value={mileageText} onChange={e => setMileageText(e.target.value)} placeholder="e.g. 88734 km" style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit", width: 140 }} />
+                  <button onClick={e => saveMileage(issue.id, e)} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                  <button onClick={e => { e.stopPropagation(); setEditingMileage(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: issue.mileage ? "#c9a84c" : "#444" }}>
+                  {issue.mileage || "Not recorded"}
+                  <span onClick={e => { e.stopPropagation(); setEditingMileage(issue.id); setMileageText(issue.mileage || ""); }} style={{ marginLeft: 8, fontSize: 10, color: "#c9a84c", cursor: "pointer" }}>[edit]</span>
+                </div>
+              )}
+            </div>
+            {/* Notes */}
+            <div>
+              <div style={sh}>Notes</div>
+              {isEN ? (
+                <div>
+                  <textarea value={noteText} onChange={e => setNoteText(e.target.value)} rows={3} style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                    <button onClick={e => saveNote(issue.id, e)} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                    <button onClick={e => { e.stopPropagation(); setEditingNote(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: "#b8b0a0", lineHeight: 1.7 }}>
+                  {issue.notes || "No notes"}
+                  <span onClick={e => { e.stopPropagation(); setEditingNote(issue.id); setNoteText(issue.notes || ""); }} style={{ marginLeft: 8, fontSize: 10, color: "#c9a84c", cursor: "pointer" }}>[edit]</span>
+                </div>
+              )}
+            </div>
+            {issue.recurring && (
+              <div>
+                <div style={sh}>Recurring</div>
+                <div style={{ fontSize: 12, color: "#c9a84c", lineHeight: 1.7 }}>
+                  {issue.recurring.kmInterval && <span>Every {issue.recurring.kmInterval.toLocaleString()} km</span>}
+                  {issue.recurring.kmInterval && issue.recurring.monthsInterval && <span> or </span>}
+                  {issue.recurring.monthsInterval && <span>Every {issue.recurring.monthsInterval} months</span>}
+                  {issue.recurring.dueAtKm && <span style={{ color: "#888" }}> · Next @ {formatMileage(issue.recurring.dueAtKm)}</span>}
+                  {issue.recurring.dueByDate && <span style={{ color: "#888" }}> · Next by {issue.recurring.dueByDate}</span>}
+                </div>
+              </div>
+            )}
+            {issue.solutions && issue.solutions.length > 0 && <div><div style={sh}>Potential Solutions</div><ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#9a9080", lineHeight: 1.9 }}>{issue.solutions.map((s, i) => <li key={i}>{s}</li>)}</ul></div>}
+            {issue.parts && issue.parts.length > 0 && <div><div style={sh}>Parts / Materials</div><ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#9a9080", lineHeight: 1.9 }}>{issue.parts.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", paddingTop: 4 }}>
+              <button onClick={e => cyclePriority(issue.id, e)} style={{ background: "transparent", color: pc.color, border: `1px solid ${pc.color}55`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Priority: {pc.label} →</button>
+              <button onClick={e => cycleTiming(issue.id, e)} style={{ background: tc.bg, color: tc.color, border: `1px solid ${tc.color}55`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>📅 {tc.label} →</button>
+              <button onClick={e => startDone(issue.id, e)}
+                style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✓ Done</button>
+            </div>
+
+            {/* ─── DONE FLOW ─── */}
+            {doneId === issue.id && doneStep === "choose" && (
+              <div style={{ background: "#252520", border: "1px solid #2ea84a44", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: "#2ea84a", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Inspection Complete</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={e => { e.stopPropagation(); setDoneStep("log"); }}
+                    style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Passed ✓</button>
+                  <button onClick={e => { e.stopPropagation(); setDoneStep("maint"); }}
+                    style={{ background: "#c0392b22", color: "#c0392b", border: "1px solid #c0392b55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Create Maintenance Task</button>
+                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }}
+                    style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {doneId === issue.id && doneStep === "log" && (
+              <div style={{ background: "#252520", border: "1px solid #2ea84a44", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: "#2ea84a", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Log to Service History</div>
+                <input value={doneMileage} onChange={e => setDoneMileage(e.target.value)} placeholder="Mileage (e.g. 89,100 km)"
+                  style={{ width: "100%", background: "#1a1a18", color: "#c9a84c", border: "1px solid #2ea84a", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" }} />
+                <textarea value={doneNote} onChange={e => setDoneNote(e.target.value)} rows={2} placeholder="Service log note (optional)"
+                  style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: 8 }} />
+                {/* Repeat prompt */}
+                <div style={{ borderTop: "1px solid #2a2a26", paddingTop: 10, marginBottom: 8 }}>
+                  <div style={{ fontSize: 9, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Repeat?</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                    {[["km", "KM"], ["months", "Months"], ["both", "Both"], ["none", "No"]].map(([key, label]) => {
+                      const active = repeatChoice === key;
+                      const isNo = key === "none";
+                      return (
+                        <button key={key} onClick={e => { e.stopPropagation(); setRepeatChoice(key); }} style={{
+                          background: active ? (isNo ? "rgba(85,85,85,0.12)" : "rgba(201,168,76,0.12)") : "transparent",
+                          color: active ? (isNo ? "#888" : "#c9a84c") : "#444",
+                          border: `1px solid ${active ? (isNo ? "rgba(85,85,85,0.35)" : "rgba(201,168,76,0.35)") : "#2e2e2a"}`,
+                          borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
+                        }}>{label}</button>
+                      );
+                    })}
+                  </div>
+                  {(repeatChoice === "km" || repeatChoice === "both") && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 10, color: "#555", width: 50 }}>Every</span>
+                      <input value={repeatKm} onChange={e => setRepeatKm(e.target.value)} placeholder="e.g. 10000"
+                        style={{ flex: 1, background: "#1a1a18", color: "#c9a84c", border: "1px solid rgba(201,168,76,0.35)", borderRadius: 3, padding: "5px 8px", fontSize: 11, fontFamily: "inherit", boxSizing: "border-box" }} />
+                      <span style={{ fontSize: 10, color: "#555" }}>km</span>
+                    </div>
+                  )}
+                  {(repeatChoice === "months" || repeatChoice === "both") && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ fontSize: 10, color: "#555", width: 50 }}>Every</span>
+                      <input value={repeatMonths} onChange={e => setRepeatMonths(e.target.value)} placeholder="e.g. 6"
+                        style={{ flex: 1, background: "#1a1a18", color: "#c9a84c", border: "1px solid rgba(201,168,76,0.35)", borderRadius: 3, padding: "5px 8px", fontSize: 11, fontFamily: "inherit", boxSizing: "border-box" }} />
+                      <span style={{ fontSize: 10, color: "#555" }}>months</span>
+                    </div>
+                  )}
+                  {repeatChoice && repeatChoice !== "none" && (repeatKm || repeatMonths) && doneMileage && (
+                    <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>
+                      Next due:{" "}
+                      {(repeatChoice === "km" || repeatChoice === "both") && repeatKm && (
+                        <span style={{ color: "#c9a84c" }}>@ {formatMileage(parseOdo(doneMileage) + parseInt(repeatKm.replace(/[^0-9]/g, "") || "0", 10))}</span>
+                      )}
+                      {repeatChoice === "both" && repeatKm && repeatMonths && <span style={{ color: "#555" }}> or </span>}
+                      {(repeatChoice === "months" || repeatChoice === "both") && repeatMonths && (
+                        <span style={{ color: "#c9a84c" }}>{(() => { const d = new Date(); d.setMonth(d.getMonth() + parseInt(repeatMonths || "0", 10)); return d.toLocaleDateString("en-US", { month: "short", year: "numeric" }); })()}</span>
+                      )}
+                      <span style={{ color: "#555" }}> — whichever comes first</span>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={e => { e.stopPropagation(); finishLogToService(issue); }}
+                    style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save to Service Log</button>
+                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); setRepeatChoice(null); }}
+                    style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {doneId === issue.id && doneStep === "log_install" && (
+              <div style={{ background: "#252520", border: "1px solid #2ea84a44", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: "#2ea84a", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Add to Parts List</div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <button onClick={() => { const i = partsCategories.indexOf(donePartCategory); setDonePartCategory(partsCategories[(i + 1) % partsCategories.length]); }}
+                    style={{ flex: 1, background: "transparent", color: partsCatColors[donePartCategory], border: `1px solid ${partsCatColors[donePartCategory]}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                    {donePartCategory} →
+                  </button>
+                  <button onClick={() => setDonePartType(donePartType === "OEM" ? "Aftermarket" : "OEM")}
+                    style={{ width: 120, background: "transparent", color: donePartType === "OEM" ? "#c0392b" : "#2e86c1", border: `1px solid ${donePartType === "OEM" ? "#c0392b" : "#2e86c1"}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                    {donePartType} →
+                  </button>
+                </div>
+                <textarea value={doneNote} onChange={e => setDoneNote(e.target.value)} rows={2} placeholder="Note (optional)"
+                  style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: 8 }} />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={e => { e.stopPropagation(); finishInstallWithAftermarket(issue); }}
+                    style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add to Parts List</button>
+                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }}
+                    style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {doneId === issue.id && doneStep === "maint" && (
+              <div style={{ background: "#252520", border: "1px solid #c0392b44", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: "#c0392b", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Create Maintenance Task</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <input value={newMaintTitle} onChange={e => setNewMaintTitle(e.target.value)} placeholder="Task title"
+                    style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c0392b", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                  <textarea value={newMaintNotes} onChange={e => setNewMaintNotes(e.target.value)} rows={2} placeholder="Notes..."
+                    style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c0392b", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                  <input value={newMaintParts} onChange={e => setNewMaintParts(e.target.value)} placeholder="Parts needed (comma separated)"
+                    style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c0392b", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                  <textarea value={doneNote} onChange={e => setDoneNote(e.target.value)} rows={1} placeholder="Service log note (optional)"
+                    style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #555", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                  <input value={doneMileage} onChange={e => setDoneMileage(e.target.value)} placeholder="Mileage (e.g. 89,100 km)"
+                    style={{ background: "#1a1a18", color: "#c9a84c", border: "1px solid #555", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button onClick={e => { e.stopPropagation(); finishCreateMaintenance(issue); }}
+                      style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Create Task + Log Inspection</button>
+                    <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }}
+                      style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {isExp && (
+          <div onClick={() => setExpandedId(null)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, paddingTop: 2 }}>
+            <span style={{ fontSize: 10, color: "#333" }}>▲</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const tabs = [
+    { key: "queue", label: "Work Queue", count: issues.length, color: "#c0392b" },
+    { key: "purchases", label: "Shopping List", count: purchases.filter(p => p.status !== "received").length, color: "#c9a84c" },
+    { key: "log", label: "Service Log", count: serviceLog.length, color: "#2ea84a" },
+    { key: "vehicle", label: "Vehicle Info", count: null, color: "#7c3ac1" },
+  ];
+
+  return (
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
+        <div style={{ borderLeft: "4px solid #c0392b", paddingLeft: 16, flex: 1 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#f0e6c8" }}>1994 Honda Acty</h1>
+          <div style={{ fontSize: 10, color: "#c0392b", letterSpacing: 3, textTransform: "uppercase", marginTop: 4 }}>HA4 · 660cc · E07A</div>
+        </div>
+        <button onClick={() => setAddMode(addMode ? null : "choose")}
+          style={{ width: 44, height: 44, borderRadius: 8, background: "transparent", color: addMode ? "#c0392b" : "#2ea84a", border: "2px solid #e8e0c8", fontSize: 24, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, lineHeight: 1, paddingRight: addMode ? 2 : 0 }}>
+          {addMode ? "×" : "+"}
+        </button>
+      </div>
+
+      {/* ─── ADD ITEM FORM ─── */}
+      {addMode === "choose" && (
+        <div style={{ background: "#222220", border: "1px solid #e8e0c8", borderRadius: 6, padding: "16px", marginBottom: 20 }}>
+          <div style={{ fontSize: 10, color: "#e8e0c8", letterSpacing: 2, textTransform: "uppercase", marginBottom: 10, textAlign: "center" }}>Add New Item</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setAddMode("task")}
+              style={{ flex: 1, background: "transparent", color: "#c0392b", border: "2px solid #c0392b", borderRadius: 4, padding: "12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, letterSpacing: 1 }}>Work Queue Task</button>
+            <button onClick={() => setAddMode("purchase")}
+              style={{ flex: 1, background: "transparent", color: "#c9a84c", border: "2px solid #c9a84c", borderRadius: 4, padding: "12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, letterSpacing: 1 }}>Shopping List Item</button>
+          </div>
+        </div>
+      )}
+
+      {addMode === "task" && (
+        <div style={{ background: "#222220", border: "1px solid #c9a84c44", borderRadius: 4, padding: "14px", marginBottom: 20 }}>
+          <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 10 }}>New Work Queue Task</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <input value={addTitle} onChange={e => setAddTitle(e.target.value)} placeholder="Task title..."
+              style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 13, fontFamily: "inherit" }} />
+            <textarea value={addNotes} onChange={e => setAddNotes(e.target.value)} rows={2} placeholder="Notes (optional)..."
+              style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+            <div>
+              <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Section</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {sectionsList.map(s => {
+                  const sc = sectionConfig[s];
+                  return <button key={s} onClick={() => setAddSection(s)} style={{
+                    background: addSection === s ? sc.color + "22" : "transparent", color: addSection === s ? sc.color : "#444",
+                    border: `1px solid ${addSection === s ? sc.color + "66" : "#2e2e2a"}`,
+                    borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit",
+                  }}>{sc.label}</button>;
+                })}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Priority</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {priorityOrder.map(p => {
+                    const pc = priorityConfig[p];
+                    return <button key={p} onClick={() => setAddPriority(p)} style={{
+                      background: addPriority === p ? pc.color + "22" : "transparent", color: addPriority === p ? pc.color : "#444",
+                      border: `1px solid ${addPriority === p ? pc.color + "66" : "#2e2e2a"}`,
+                      borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
+                    }}>{pc.label}</button>;
+                  })}
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Timeline</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["thisweek", "upcoming", "longterm"].map(t => {
+                    const tc = timingConfig[t];
+                    return <button key={t} onClick={() => setAddTiming(t)} style={{
+                      background: addTiming === t ? tc.color + "22" : "transparent", color: addTiming === t ? tc.color : "#444",
+                      border: `1px solid ${addTiming === t ? tc.color + "66" : "#2e2e2a"}`,
+                      borderRadius: 3, padding: "4px 8px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit",
+                    }}>{tc.label}</button>;
+                  })}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
+              <button onClick={() => {
+                if (!addTitle.trim()) return;
+                setIssues(prev => [...prev, { id: Date.now(), section: addSection, title: addTitle.trim(), priority: addPriority, timing: addTiming, notes: addNotes, mileage: null, parts: [], solutions: [] }]);
+                setAddMode(null); setAddTitle(""); setAddNotes(""); setAddSection("inspections"); setAddPriority("medium"); setAddTiming("upcoming");
+                setTab("queue");
+              }}
+                style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "8px 18px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Add Task</button>
+              <button onClick={() => setAddMode(null)}
+                style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "8px 18px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addMode === "purchase" && (
+        <div style={{ background: "#222220", border: "1px solid #c9a84c44", borderRadius: 4, padding: "14px", marginBottom: 20 }}>
+          <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 10 }}>New Shopping List Item</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <input value={addTitle} onChange={e => setAddTitle(e.target.value)} placeholder="Item name..."
+              style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 13, fontFamily: "inherit" }} />
+            <input value={addCost} onChange={e => setAddCost(e.target.value)} placeholder="Cost (e.g. $25)"
+              style={{ background: "#1a1a18", color: "#c9a84c", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 12, fontFamily: "inherit" }} />
+            <div>
+              <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Category</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {partsCategories.map(c => (
+                  <button key={c} onClick={() => setAddPartsCategory(c)} style={{
+                    background: addPartsCategory === c ? partsCatColors[c] + "22" : "transparent", color: addPartsCategory === c ? partsCatColors[c] : "#444",
+                    border: `1px solid ${addPartsCategory === c ? partsCatColors[c] + "66" : "#2e2e2a"}`,
+                    borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
+                  }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Type</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setAddPartsType("OEM")} style={{
+                  background: addPartsType === "OEM" ? "#c0392b22" : "transparent", color: addPartsType === "OEM" ? "#c0392b" : "#444",
+                  border: `1px solid ${addPartsType === "OEM" ? "#c0392b66" : "#2e2e2a"}`,
+                  borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
+                }}>OEM</button>
+                <button onClick={() => setAddPartsType("Aftermarket")} style={{
+                  background: addPartsType === "Aftermarket" ? "#2e86c122" : "transparent", color: addPartsType === "Aftermarket" ? "#2e86c1" : "#444",
+                  border: `1px solid ${addPartsType === "Aftermarket" ? "#2e86c166" : "#2e2e2a"}`,
+                  borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit",
+                }}>Aftermarket</button>
+              </div>
+            </div>
+            <textarea value={addNotes} onChange={e => setAddNotes(e.target.value)} rows={2} placeholder="Notes (optional)..."
+              style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
+              <button onClick={() => {
+                if (!addTitle.trim()) return;
+                setPurchasesRaw(prev => [...prev, { id: Date.now(), item: addTitle.trim(), cost: addCost, status: "tobuy", notes: addNotes, partsCategory: addPartsCategory, partsType: addPartsType }]);
+                setAddMode(null); setAddTitle(""); setAddNotes(""); setAddCost(""); setAddPartsCategory("Engine"); setAddPartsType("Aftermarket");
+                setTab("purchases");
+              }}
+                style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "8px 18px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Add to Shopping List</button>
+              <button onClick={() => setAddMode(null)}
+                style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "8px 18px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "1px solid #2e2e2a", justifyContent: "center" }}>
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => { setTab(t.key); setExpandedId(null); setExpandedLogId(null); }} style={{
+            background: tab === t.key ? "#222220" : "transparent", color: tab === t.key ? t.color : "#555",
+            border: "none", borderBottom: tab === t.key ? `2px solid ${t.color}` : "2px solid transparent",
+            padding: "8px 20px", fontSize: 11, cursor: "pointer", letterSpacing: 2, textTransform: "uppercase", fontFamily: "inherit",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+          }}>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ─── WORK QUEUE ─── */}
+      {tab === "queue" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+            {[
+              { label: "This Week", val: thisweekCount, accent: "#c0392b" },
+              { label: "Upcoming", val: upcomingCount, accent: "#d68910" },
+              { label: "Long-term", val: longtermCount, accent: "#2e86c1" },
+            ].map(({ label, val, accent }) => (
+              <div key={label} style={{ background: "#252520", border: "1px solid #2e2e2a", borderRadius: 4, padding: "8px 10px", textAlign: "center" }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: accent }}>{val}</div>
+                <div style={{ fontSize: 8, color: "#555", letterSpacing: 1, textTransform: "uppercase" }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            {[["all", "All"], ["thisweek", "This Week"], ["upcoming", "Upcoming"], ["longterm", "Long-term"]].map(([key, label]) => {
+              const active = timingFilter === key;
+              const colors = { all: "200,195,180", thisweek: "192,57,43", upcoming: "214,137,16", longterm: "46,134,193" };
+              const rgb = colors[key];
+              return (
+                <button key={key} onClick={() => { setTimingFilter(key); if (key !== "all") setOpenSections({ inspections: true, maintenance: true, monitoring: true, installations: true }); }} style={{
+                  background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333",
+                  border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`,
+                  borderRadius: 3, padding: "3px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit",
+                }}>{label}</button>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            {[["all", "All"], ["high", "HIGH"], ["medium", "MED"], ["low", "LOW"]].map(([key, label]) => {
+              const active = priorityFilter === key;
+              const colors = { all: "200,195,180", high: "192,57,43", medium: "214,137,16", low: "46,134,193" };
+              const rgb = colors[key];
+              return (
+                <button key={key} onClick={() => { setPriorityFilter(key); if (key !== "all") setOpenSections({ inspections: true, maintenance: true, monitoring: true, installations: true }); }} style={{
+                  background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333",
+                  border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`,
+                  borderRadius: 3, padding: "3px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit",
+                }}>{label}</button>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
+            {[["all", "All", "200,195,180"], ...sectionsList.map(s => {
+              const rgbMap = { inspections: "214,137,16", maintenance: "192,57,43", monitoring: "58,127,193", installations: "46,168,74" };
+              return [s, sectionConfig[s].label, rgbMap[s]];
+            })].map(([key, label, rgb]) => {
+              const active = sectionFilter === key;
+              return (
+                <button key={key} onClick={() => { setSectionFilter(key); if (key !== "all") setOpenSections(prev => ({ ...prev, [key]: true })); }} style={{
+                  background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333",
+                  border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`,
+                  borderRadius: 3, padding: "3px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit",
+                }}>{label}</button>
+              );
+            })}
+          </div>
+          {(sectionFilter === "all" ? sectionsList : [sectionFilter]).map(s => {
+            const items = grouped[s];
+            if (!items || items.length === 0) return null;
+            const sc = sectionConfig[s];
+            const isOpen = !!openSections[s];
+            return (
+              <div key={s} style={{ marginBottom: 16 }}>
+                <div onClick={() => setOpenSections(prev => ({ ...prev, [s]: !prev[s] }))}
+                  style={{ fontSize: 10, color: sc.color, letterSpacing: 3, textTransform: "uppercase", borderBottom: `1px solid ${sc.color}33`, paddingBottom: 6, marginBottom: isOpen ? 12 : 0, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: sc.color, display: "inline-block" }} />
+                  <span style={{ flex: 1 }}>{sc.label} · {items.length} item{items.length !== 1 ? "s" : ""}</span>
+                  <span style={{ fontSize: 10, color: sc.color }}>{isOpen ? "▲" : "▼"}</span>
+                </div>
+                {isOpen && items.map(renderCard)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ─── PURCHASES ─── */}
+      {tab === "purchases" && (
+        <div>
+          <div style={{ fontSize: 10, color: "#888", marginBottom: 16, lineHeight: 1.6 }}>Tap checkbox to advance: To Buy → Ordered → Received (creates work queue task).</div>
+          {(() => {
+            const toBuy = purchases.filter(p => p.status === "tobuy");
+            const ordered = purchases.filter(p => p.status === "ordered");
+            const parseCost = (c) => { const m = (c || "").replace(/[^0-9.]/g, ""); return m ? parseFloat(m) : 0; };
+            const toBuyTotal = toBuy.reduce((sum, p) => sum + parseCost(p.cost), 0);
+            const orderedTotal = ordered.reduce((sum, p) => sum + parseCost(p.cost), 0);
+
+            function renderPurchaseRow(p, checkAction, checkStyle, textStyle) {
+              const isEditingCostThis = editingCost === p.id;
+              const isPExp = expandedPurchaseId === p.id;
+              const isEPN = editingPurchaseNote === p.id;
+              const isEPName = editingPurchaseName === p.id;
+              return (
+                <div key={p.id} style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                  {/* Header */}
+                  <div onClick={() => setExpandedPurchaseId(isPExp ? null : p.id)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                    <div onClick={e => { e.stopPropagation(); checkAction(); }} style={{ width: 18, height: 18, borderRadius: 3, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...checkStyle }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: textStyle?.color || "#f0e6c8" }}>{p.item}</div>
+                      <div style={{ fontSize: 10, color: partsCatColors[p.partsCategory] || "#555", marginTop: 1, letterSpacing: 1, display: "flex", gap: 6, alignItems: "center" }}>
+                        {p.partsCategory || "Uncategorized"}
+                        {p.partsType && <span style={{ fontSize: 8, color: p.partsType === "OEM" ? "#c0392b" : "#2e86c1", border: `1px solid ${p.partsType === "OEM" ? "#c0392b44" : "#2e86c144"}`, borderRadius: 2, padding: "0px 4px", letterSpacing: 1 }}>{p.partsType}</span>}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, color: p.cost ? "#c9a84c" : "#333", fontWeight: 600, flexShrink: 0 }}>{p.cost || "—"}</span>
+                    <span onClick={e => { e.stopPropagation(); setDeletingId(p.id); setDeletingType("purchase"); }}
+                      style={{ fontSize: 14, color: "#555", cursor: "pointer", padding: "4px 4px", lineHeight: 1, flexShrink: 0 }}>✕</span>
+                  </div>
+                  {/* Delete confirmation */}
+                  {deletingId === p.id && deletingType === "purchase" && (
+                    <div style={{ background: "#2a1a1a", borderTop: "1px solid #c0392b44", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 11, color: "#c0392b" }}>Delete this item?</span>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={e => { e.stopPropagation(); setPurchases(prev => prev.filter(x => x.id !== p.id)); setDeletingId(null); }}
+                          style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                        <button onClick={e => { e.stopPropagation(); setDeletingId(null); }}
+                          style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Expand indicator */}
+                  {!isPExp && (
+                    <div onClick={() => setExpandedPurchaseId(p.id)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, marginTop: -4 }}>
+                      <span style={{ fontSize: 10, color: "#333" }}>▼</span>
+                    </div>
+                  )}
+                  {/* Expanded details */}
+                  {isPExp && (
+                    <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+                      {/* Name */}
+                      <div>
+                        <div style={sh}>Item Name</div>
+                        {isEPName ? (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <input value={purchaseNameText} onChange={e => setPurchaseNameText(e.target.value)}
+                              style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                            <button onClick={e => { e.stopPropagation(); setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, item: purchaseNameText } : x)); setEditingPurchaseName(null); }}
+                              style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                            <button onClick={() => setEditingPurchaseName(null)}
+                              style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: "#f0e6c8" }}>
+                            {p.item}
+                            <span onClick={() => { setEditingPurchaseName(p.id); setPurchaseNameText(p.item); }}
+                              style={{ marginLeft: 8, fontSize: 10, color: "#c9a84c", cursor: "pointer" }}>[edit]</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* Cost */}
+                      <div>
+                        <div style={sh}>Cost</div>
+                        {isEditingCostThis ? (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <input value={costText} onChange={e => setCostText(e.target.value)} placeholder="$0"
+                              onKeyDown={e => { if (e.key === "Enter") { setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, cost: costText } : x)); setEditingCost(null); } }}
+                              style={{ background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit", width: 100 }} />
+                            <button onClick={() => { setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, cost: costText } : x)); setEditingCost(null); }}
+                              style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                            <button onClick={() => setEditingCost(null)}
+                              style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: p.cost ? "#c9a84c" : "#444" }}>
+                            {p.cost || "No price set"}
+                            <span onClick={() => { setEditingCost(p.id); setCostText(p.cost || ""); }}
+                              style={{ marginLeft: 8, fontSize: 10, color: "#c9a84c", cursor: "pointer" }}>[edit]</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* Notes */}
+                      <div>
+                        <div style={sh}>Notes</div>
+                        {isEPN ? (
+                          <div>
+                            <textarea value={purchaseNoteText} onChange={e => setPurchaseNoteText(e.target.value)} rows={2}
+                              style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                              <button onClick={() => { setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, notes: purchaseNoteText } : x)); setEditingPurchaseNote(null); }}
+                                style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                              <button onClick={() => setEditingPurchaseNote(null)}
+                                style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: "#b8b0a0", lineHeight: 1.7 }}>
+                            {p.notes || "No notes"}
+                            <span onClick={() => { setEditingPurchaseNote(p.id); setPurchaseNoteText(p.notes || ""); }}
+                              style={{ marginLeft: 8, fontSize: 10, color: "#c9a84c", cursor: "pointer" }}>[edit]</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* Category & Type */}
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => { const cur = p.partsCategory || "Engine"; const i = partsCategories.indexOf(cur); setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, partsCategory: partsCategories[(i + 1) % partsCategories.length] } : x)); }}
+                          style={{ flex: 1, background: "transparent", color: partsCatColors[p.partsCategory] || "#555", border: `1px solid ${partsCatColors[p.partsCategory] || "#555"}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                          {p.partsCategory || "Uncategorized"} →
+                        </button>
+                        <button onClick={() => setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, partsType: (p.partsType || "Aftermarket") === "OEM" ? "Aftermarket" : "OEM" } : x))}
+                          style={{ width: 120, background: "transparent", color: (p.partsType || "Aftermarket") === "OEM" ? "#c0392b" : "#2e86c1", border: `1px solid ${(p.partsType || "Aftermarket") === "OEM" ? "#c0392b" : "#2e86c1"}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                          {p.partsType || "Aftermarket"} →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Collapse indicator */}
+                  {isPExp && (
+                    <div onClick={() => setExpandedPurchaseId(null)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, paddingTop: 2 }}>
+                      <span style={{ fontSize: 10, color: "#333" }}>▲</span>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div>
+                {/* TO BUY */}
+                {toBuy.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 3, textTransform: "uppercase", borderBottom: "1px solid #c9a84c33", paddingBottom: 6, marginBottom: 12 }}>To Buy</div>
+                    {toBuy.map(p => renderPurchaseRow(p,
+                      () => setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, status: "ordered" } : x)),
+                      { border: "2px solid #555" },
+                      {}
+                    ))}
+                    {toBuyTotal > 0 && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 0", gap: 10 }}>
+                        <span style={{ fontSize: 10, color: "#555", letterSpacing: 1, textTransform: "uppercase" }}>To Buy Total</span>
+                        <span style={{ fontSize: 12, color: "#c9a84c", fontWeight: 600, width: 70, textAlign: "right" }}>~${toBuyTotal.toFixed(0)}</span>
+                        <span style={{ width: 14 }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* ORDERED */}
+                {ordered.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 10, color: "#d68910", letterSpacing: 3, textTransform: "uppercase", borderBottom: "1px solid #d6891033", paddingBottom: 6, marginBottom: 12 }}>
+                      Ordered — tap ✓ when received
+                    </div>
+                    {ordered.map(p => {
+                      const isReceiving = receivingId === p.id;
+                      return (
+                        <div key={p.id}>
+                          {renderPurchaseRow(p,
+                            () => setReceivingId(p.id),
+                            { border: "2px solid #d68910", background: "#d6891022" },
+                            {}
+                          )}
+                          {isReceiving && (
+                            <div style={{ background: "#252520", border: "1px solid #c9a84c44", borderRadius: 4, padding: "10px 14px", marginBottom: 8, marginTop: -4 }}>
+                              <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Received — add to work queue as:</div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                {[["thisweek", "This Week", "#c0392b"], ["upcoming", "Upcoming", "#d68910"], ["longterm", "Long-term", "#2e86c1"]].map(([timing, label, color]) => (
+                                  <button key={timing} onClick={() => {
+                                    setIssues(prev => [...prev, {
+                                      id: Date.now(), section: "installations", title: p.item,
+                                      priority: "medium", timing,
+                                      notes: p.notes || `Received. Ready to install.`, mileage: null,
+                                      parts: [p.item + (p.cost ? ` (${p.cost})` : "")], solutions: [],
+                                      partsCategory: p.partsCategory || "Cosmetic", partsType: p.partsType || "Aftermarket"
+                                    }]);
+                                    setPurchases(prev => prev.filter(x => x.id !== p.id));
+                                    setReceivingId(null);
+                                  }}
+                                  style={{ background: color + "22", color, border: `1px solid ${color}66`, borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}>
+                                    {label}
+                                  </button>
+                                ))}
+                                <button onClick={() => setReceivingId(null)}
+                                  style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ─── SERVICE LOG ─── */}
+      {tab === "log" && (
+        <div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+            {logCategories.map(c => {
+              const catColorMap = { Inspect: "#d68910", Maintain: "#c0392b", Monitor: "#2e86c1", Install: "#2ea84a" };
+              const catColor = catColorMap[c] || "#2ea84a";
+              return <button key={c} onClick={() => setLogFilter(c)} style={btnS(logFilter === c, c === "All" ? "#2ea84a" : catColor)}>{c}</button>;
+            })}
+          </div>
+          {filteredLog.length === 0
+            ? <div style={{ color: "#444", fontSize: 12, padding: 20, textAlign: "center" }}>No entries match this filter.</div>
+            : filteredLog.map((entry, idx) => {
+              const isExp = expandedLogId === entry.id;
+              const isLast = idx === filteredLog.length - 1;
+              return (
+                <div key={entry.id} style={{ display: "flex", gap: 0 }}>
+                  {/* Timeline rail with date */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 64, flexShrink: 0 }}>
+                    <div style={{ fontSize: 9, color: "#c9a84c", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4, textAlign: "center", lineHeight: 1.3 }}>
+                      {entry.date.split(",")[0]}<br/>
+                      <span style={{ color: "#555" }}>{entry.date.includes(",") ? entry.date.split(",")[1].trim() : ""}</span>
+                    </div>
+                    <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#2ea84a", flexShrink: 0, boxShadow: "0 0 6px #2ea84a44" }} />
+                    {!isLast && <div style={{ width: 2, flex: 1, background: "linear-gradient(to bottom, #2ea84a44, #2e2e2a)" }} />}
+                  </div>
+                  {/* Card */}
+                  <div style={{ flex: 1, marginBottom: 16, marginLeft: 8 }}>
+                    <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, overflow: "hidden" }}>
+                      <div onClick={() => setExpandedLogId(isExp ? null : entry.id)} style={{ padding: "11px 14px", cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "#f0e6c8" }}>{entry.title}</div>
+                            <div style={{ fontSize: 10, color: ({"Inspect":"#d68910","Maintain":"#c0392b","Monitor":"#2e86c1","Install":"#2ea84a"})[entry.category] || "#888", marginTop: 2, letterSpacing: 1 }}>{entry.category}</div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0, marginLeft: 12 }}>
+                            {entry.mileage && <span style={{ fontSize: 11, color: "#c9a84c" }}>@ {entry.mileage}</span>}
+                            <span onClick={e => { e.stopPropagation(); setDeletingId(entry.id); setDeletingType("log"); }}
+                              style={{ fontSize: 14, color: "#555", cursor: "pointer", padding: "4px 4px", lineHeight: 1 }}>✕</span>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Delete confirmation */}
+                      {deletingId === entry.id && deletingType === "log" && (
+                        <div style={{ background: "#2a1a1a", borderTop: "1px solid #c0392b44", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 11, color: "#c0392b" }}>Delete this entry?</span>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={e => { e.stopPropagation(); setServiceLogRaw(prev => prev.filter(x => x.id !== entry.id)); setDeletingId(null); }}
+                              style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                            <button onClick={e => { e.stopPropagation(); setDeletingId(null); }}
+                              style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                      {!isExp && (
+                        <div onClick={() => setExpandedLogId(entry.id)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, marginTop: -2 }}>
+                          <span style={{ fontSize: 10, color: "#333" }}>▼</span>
+                        </div>
+                      )}
+                      {isExp && (
+                        <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+                          {/* Title */}
+                          <div>
+                            <div style={sh}>Title</div>
+                            {editingLogField?.id === entry.id && editingLogField?.field === "title" ? (
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <input value={logFieldText} onChange={e => setLogFieldText(e.target.value)}
+                                  style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                                <button onClick={() => { setServiceLogRaw(prev => prev.map(x => x.id === entry.id ? { ...x, title: logFieldText } : x)); setEditingLogField(null); }}
+                                  style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                <button onClick={() => setEditingLogField(null)}
+                                  style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: "#f0e6c8" }}>
+                                {entry.title}
+                                <span onClick={() => { setEditingLogField({ id: entry.id, field: "title" }); setLogFieldText(entry.title); }}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#2ea84a", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Category */}
+                          <div>
+                            <div style={sh}>Category</div>
+                            {editingLogField?.id === entry.id && editingLogField?.field === "category" ? (
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                {["inspections", "maintenance", "monitoring"].map(s => {
+                                  const sc = sectionConfig[s];
+                                  return <button key={s} onClick={() => { setServiceLogRaw(prev => prev.map(x => x.id === entry.id ? { ...x, category: sc.label } : x)); setEditingLogField(null); }}
+                                    style={{ background: sc.color + "22", color: sc.color, border: `1px solid ${sc.color}66`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}>{sc.label}</button>;
+                                })}
+                                <button onClick={() => setEditingLogField(null)}
+                                  style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: ({"Inspect":"#d68910","Maintain":"#c0392b","Monitor":"#2e86c1","Install":"#2ea84a"})[entry.category] || "#888" }}>
+                                {entry.category}
+                                <span onClick={() => setEditingLogField({ id: entry.id, field: "category" })}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#2ea84a", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Date */}
+                          <div>
+                            <div style={sh}>Date</div>
+                            {editingLogField?.id === entry.id && editingLogField?.field === "date" ? (
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <input value={logFieldText} onChange={e => setLogFieldText(e.target.value)}
+                                  style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                                <button onClick={() => { setServiceLogRaw(prev => prev.map(x => x.id === entry.id ? { ...x, date: logFieldText } : x)); setEditingLogField(null); }}
+                                  style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                <button onClick={() => setEditingLogField(null)}
+                                  style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: "#c9a84c" }}>
+                                {entry.date}
+                                <span onClick={() => { setEditingLogField({ id: entry.id, field: "date" }); setLogFieldText(entry.date); }}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#2ea84a", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Mileage */}
+                          <div>
+                            <div style={sh}>Mileage</div>
+                            {editingLogField?.id === entry.id && editingLogField?.field === "mileage" ? (
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <input value={logFieldText} onChange={e => setLogFieldText(e.target.value)}
+                                  style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                                <button onClick={() => { setServiceLogRaw(prev => prev.map(x => x.id === entry.id ? { ...x, mileage: logFieldText } : x)); setEditingLogField(null); }}
+                                  style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                <button onClick={() => setEditingLogField(null)}
+                                  style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: entry.mileage ? "#c9a84c" : "#444" }}>
+                                {entry.mileage || "Not recorded"}
+                                <span onClick={() => { setEditingLogField({ id: entry.id, field: "mileage" }); setLogFieldText(entry.mileage || ""); }}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#2ea84a", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Notes */}
+                          <div>
+                            <div style={sh}>Notes</div>
+                            {editingLogField?.id === entry.id && editingLogField?.field === "notes" ? (
+                              <div>
+                                <textarea value={logFieldText} onChange={e => setLogFieldText(e.target.value)} rows={3}
+                                  style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                                  <button onClick={() => { setServiceLogRaw(prev => prev.map(x => x.id === entry.id ? { ...x, notes: logFieldText } : x)); setEditingLogField(null); }}
+                                    style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                  <button onClick={() => setEditingLogField(null)}
+                                    style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: "#b8b0a0", lineHeight: 1.7 }}>
+                                {entry.notes || "No notes"}
+                                <span onClick={() => { setEditingLogField({ id: entry.id, field: "notes" }); setLogFieldText(entry.notes || ""); }}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#2ea84a", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                          {entry.parts && entry.parts.length > 0 && <div><div style={sh}>Parts Used</div><ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#9a9080", lineHeight: 1.9 }}>{entry.parts.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
+                        </div>
+                      )}
+                      {isExp && (
+                        <div onClick={() => setExpandedLogId(null)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, paddingTop: 2 }}>
+                          <span style={{ fontSize: 10, color: "#333" }}>▲</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          }
+        </div>
+      )}
+
+      {/* ─── VEHICLE INFO ─── */}
+      {tab === "vehicle" && (
+        <div>
+          <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
+            <div onClick={() => setInfoOpen(!infoOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Vehicle Info</div>
+              <span style={{ fontSize: 10, color: "#444" }}>{infoOpen ? "▲" : "▼"}</span>
+            </div>
+            {infoOpen && (
+              <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px" }}>
+                  {[
+                    { label: "Make / Model", value: "1994 Honda Acty" },
+                    { label: "Chassis", value: "HA4 — Realtime 4WD" },
+                    { label: "Engine", value: "E07A 660cc 3-cyl" },
+                    { label: "Weight", value: "1,640 lbs" },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>{label}</div>
+                      <div style={{ fontSize: 12, color: "#e8e0c8", marginTop: 1 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px", marginTop: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Purchased</div>
+                    <div style={{ fontSize: 12, color: "#e8e0c8", marginTop: 1 }}>Feb 27, 2026</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Odo at Purchase</div>
+                    <div style={{ fontSize: 12, color: "#e8e0c8", marginTop: 1 }}>88,524 km</div>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px", marginTop: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Current Odometer</div>
+                    {editingField === "odo" ? (
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
+                        <input value={editingFieldValue} onChange={e => setEditingFieldValue(e.target.value)}
+                          style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit", flex: 1, minWidth: 0 }} />
+                        <button onClick={e => { e.stopPropagation(); const newOdo = formatMileage(editingFieldValue); setVehicleOdoRaw(newOdo); setIssuesRaw(prev => autoPromote(prev, newOdo)); setEditingField(null); }}
+                          style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                        <button onClick={e => { e.stopPropagation(); setEditingField(null); }}
+                          style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: "#c9a84c", marginTop: 1 }}>
+                        {vehicleOdo}
+                        <span onClick={() => { setEditingField("odo"); setEditingFieldValue(vehicleOdo); }}
+                          style={{ marginLeft: 8, fontSize: 10, color: "#c9a84c", cursor: "pointer" }}>[edit]</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ borderTop: "1px solid #2a2a26", marginTop: 14, paddingTop: 14 }}>
+                  <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase", marginBottom: 10 }}>Licensing & Registration</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px" }}>
+                    {[
+                      { label: "VIN", value: "HA42120119" },
+                      { label: "License Plate", value: "WRT 247" },
+                      { label: "State", value: "Hawaii" },
+                      { label: "Registration Exp.", value: "Aug 2026" },
+                      { label: "Safety Check Exp.", value: "Oct 2026" },
+                      { label: "Insurance", value: "TBD" },
+                    ].map(({ label, value }) => (
+                      <div key={label}>
+                        <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>{label}</div>
+                        <div style={{ fontSize: 12, color: value === "TBD" ? "#555" : "#e8e0c8", marginTop: 1 }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
+            <div onClick={() => setAftermarketOpen(!aftermarketOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Parts List</div>
+              <span style={{ fontSize: 10, color: "#444" }}>{aftermarketOpen ? "▲" : "▼"}</span>
+            </div>
+            {aftermarketOpen && (
+              <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px" }}>
+                {/* Filter buttons */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+                  {[["All", "200,195,180"], ...partsCategories.map(c => {
+                    const rgbMap = { "Engine": "192,57,43", "Drivetrain": "214,137,16", "Electric": "201,168,76", "Brakes/Suspension": "46,168,74", "Wheels/Tires": "46,134,193", "Cosmetic": "124,58,193" };
+                    return [c, rgbMap[c]];
+                  })].map(([c, rgb]) => {
+                    const active = partsFilter === c;
+                    return <button key={c} onClick={() => setPartsFilter(c)} style={{
+                      background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333",
+                      border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`,
+                      borderRadius: 3, padding: "3px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit",
+                    }}>{c}</button>;
+                  })}
+                </div>
+                {/* Parts cards */}
+                {aftermarketItems.filter(p => {
+                  if (partsFilter === "All") return true;
+                  return (typeof p === "object" ? p.category : "") === partsFilter;
+                }).sort((a, b) => {
+                  const da = typeof a === "object" && a.installedDate ? new Date(a.installedDate) : new Date(0);
+                  const db = typeof b === "object" && b.installedDate ? new Date(b.installedDate) : new Date(0);
+                  return db - da;
+                }).map((item, idx) => {
+                  const id = typeof item === "object" ? (item.id || idx) : idx;
+                  const name = typeof item === "object" ? item.name : item;
+                  const cat = typeof item === "object" ? item.category : "Uncategorized";
+                  const type = typeof item === "object" ? item.type : "Aftermarket";
+                  const installed = typeof item === "object" ? item.installedDate : null;
+                  const partNotes = typeof item === "object" ? item.notes : "";
+                  const catColor = partsCatColors[cat] || "#555";
+                  const isPartExp = expandedPartId === id;
+                  return (
+                    <div key={id} style={{ background: "#1a1a18", border: "1px solid #2e2e2a", borderLeft: `3px solid ${catColor}`, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                      {/* Header */}
+                      <div onClick={() => setExpandedPartId(isPartExp ? null : id)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, color: "#f0e6c8" }}>{name}</div>
+                          <div style={{ fontSize: 10, color: "#555", marginTop: 1, display: "flex", gap: 6, alignItems: "center" }}>
+                            <span style={{ color: catColor }}>{cat}</span>
+                            {installed && <span>· {installed}</span>}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 8, color: type === "OEM" ? "#c0392b" : "#2e86c1", border: `1px solid ${type === "OEM" ? "#c0392b44" : "#2e86c144"}`, borderRadius: 2, padding: "1px 5px", letterSpacing: 1, flexShrink: 0 }}>{type}</span>
+                        <span onClick={e => { e.stopPropagation(); setDeletingId(id); setDeletingType("part"); }}
+                          style={{ fontSize: 14, color: "#555", cursor: "pointer", padding: "4px 4px", lineHeight: 1, flexShrink: 0 }}>✕</span>
+                      </div>
+                      {/* Delete confirm */}
+                      {deletingId === id && deletingType === "part" && (
+                        <div style={{ background: "#2a1a1a", borderTop: "1px solid #c0392b44", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 11, color: "#c0392b" }}>Delete this part?</span>
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={e => { e.stopPropagation(); setAftermarketItems(prev => prev.filter(p => p !== item)); setDeletingId(null); }}
+                              style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                            <button onClick={e => { e.stopPropagation(); setDeletingId(null); }}
+                              style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                      {!isPartExp && (
+                        <div onClick={() => setExpandedPartId(id)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, marginTop: -4 }}>
+                          <span style={{ fontSize: 10, color: "#333" }}>▼</span>
+                        </div>
+                      )}
+                      {isPartExp && (
+                        <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+                          {/* Name */}
+                          <div>
+                            <div style={sh}>Name</div>
+                            {editingPartField?.id === id && editingPartField?.field === "name" ? (
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <input value={partFieldText} onChange={e => setPartFieldText(e.target.value)}
+                                  style={{ flex: 1, background: "#222220", color: "#e8e0c8", border: "1px solid #7c3ac1", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                                <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? (typeof p === "object" ? { ...p, name: partFieldText } : { id: Date.now(), name: partFieldText, category: "Uncategorized", type: "Aftermarket" }) : p)); setEditingPartField(null); }}
+                                  style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                <button onClick={() => setEditingPartField(null)}
+                                  style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: "#f0e6c8" }}>
+                                {name}
+                                <span onClick={() => { setEditingPartField({ id, field: "name" }); setPartFieldText(name); }}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#7c3ac1", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Category & Type */}
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={() => { const i = partsCategories.indexOf(cat); setAftermarketItems(prev => prev.map(p => p === item ? (typeof p === "object" ? { ...p, category: partsCategories[(i + 1) % partsCategories.length] } : { id: Date.now(), name: p, category: partsCategories[(i + 1) % partsCategories.length], type: "Aftermarket" }) : p)); }}
+                              style={{ flex: 1, background: "transparent", color: partsCatColors[cat] || "#555", border: `1px solid ${partsCatColors[cat] || "#555"}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                              {cat} →
+                            </button>
+                            <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? (typeof p === "object" ? { ...p, type: type === "OEM" ? "Aftermarket" : "OEM" } : { id: Date.now(), name: p, category: "Uncategorized", type: type === "OEM" ? "Aftermarket" : "OEM" }) : p)); }}
+                              style={{ width: 120, background: "transparent", color: type === "OEM" ? "#c0392b" : "#2e86c1", border: `1px solid ${type === "OEM" ? "#c0392b" : "#2e86c1"}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                              {type} →
+                            </button>
+                          </div>
+                          {/* Install Date */}
+                          <div>
+                            <div style={sh}>Installed</div>
+                            {editingPartField?.id === id && editingPartField?.field === "date" ? (
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <input value={partFieldText} onChange={e => setPartFieldText(e.target.value)}
+                                  style={{ flex: 1, background: "#222220", color: "#e8e0c8", border: "1px solid #7c3ac1", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                                <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? (typeof p === "object" ? { ...p, installedDate: partFieldText } : { id: Date.now(), name: p, category: "Uncategorized", type: "Aftermarket", installedDate: partFieldText }) : p)); setEditingPartField(null); }}
+                                  style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                <button onClick={() => setEditingPartField(null)}
+                                  style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: installed ? "#c9a84c" : "#444" }}>
+                                {installed || "Not recorded"}
+                                <span onClick={() => { setEditingPartField({ id, field: "date" }); setPartFieldText(installed || ""); }}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#7c3ac1", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Notes */}
+                          <div>
+                            <div style={sh}>Notes</div>
+                            {editingPartField?.id === id && editingPartField?.field === "notes" ? (
+                              <div>
+                                <textarea value={partFieldText} onChange={e => setPartFieldText(e.target.value)} rows={2}
+                                  style={{ width: "100%", background: "#222220", color: "#e8e0c8", border: "1px solid #7c3ac1", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                                  <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? (typeof p === "object" ? { ...p, notes: partFieldText } : { id: Date.now(), name: p, category: "Uncategorized", type: "Aftermarket", notes: partFieldText }) : p)); setEditingPartField(null); }}
+                                    style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                  <button onClick={() => setEditingPartField(null)}
+                                    style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: "#b8b0a0", lineHeight: 1.7 }}>
+                                {partNotes || "No notes"}
+                                <span onClick={() => { setEditingPartField({ id, field: "notes" }); setPartFieldText(partNotes || ""); }}
+                                  style={{ marginLeft: 8, fontSize: 10, color: "#7c3ac1", cursor: "pointer" }}>[edit]</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {isPartExp && (
+                        <div onClick={() => setExpandedPartId(null)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, paddingTop: 2 }}>
+                          <span style={{ fontSize: 10, color: "#333" }}>▲</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {aftermarketItems.filter(p => partsFilter === "All" || (typeof p === "object" ? p.category : "") === partsFilter).length === 0 && (
+                  <div style={{ color: "#444", fontSize: 12, padding: 10, textAlign: "center" }}>No parts in this category.</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
+            <div onClick={() => setContactsOpen(!contactsOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Shops & Contacts</div>
+              <span style={{ fontSize: 10, color: "#444" }}>{contactsOpen ? "▲" : "▼"}</span>
+            </div>
+            {contactsOpen && (
+              <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#f0e6c8" }}>Tagami Auto Service</div>
+                  <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>Annual safety check</div>
+                  <div style={{ fontSize: 11, color: "#b8b0a0", marginTop: 2 }}>1733 Kahai St, Honolulu, HI 96819</div>
+                  <div style={{ fontSize: 11, color: "#b8b0a0" }}>(808) 841-5009</div>
+                  <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Hours: 7–10 AM, then 12–4 PM. Call ahead — sometimes closes without notice.</div>
+                  <div style={{ fontSize: 10, color: "#d68910", marginTop: 2 }}>Tip: follow the old man's instructions. He can be grumpy but it's simple.</div>
+                </div>
+                <div style={{ borderTop: "1px solid #2a2a26", paddingTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#f0e6c8" }}>JDM Imports Hawaii — Aaron Rideout</div>
+                  <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>Mechanical work, upgrades (no body work)</div>
+                  <div style={{ fontSize: 11, color: "#b8b0a0", marginTop: 2 }}>Same address — subleases from Tagami Auto</div>
+                  <div style={{ fontSize: 11, color: "#b8b0a0" }}>(808) 391-3425</div>
+                  <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Call for appointment. Prev. owner's recommendation.</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
+            <div onClick={() => setPrevOwnerOpen(!prevOwnerOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Previous Owner Notes (Original Doc)</div>
+              <span style={{ fontSize: 10, color: "#444" }}>{prevOwnerOpen ? "▲" : "▼"}</span>
+            </div>
+            {prevOwnerOpen && (
+              <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px" }}>
+                <div style={{ fontSize: 11, color: "#9a9080", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{`Good to Know Stuffs:
+• Tires - inflate to 35 psi
+• Gas - unleaded; tank is on the driver's side just past the door
+• Oil - 10w-30; tank is on the passenger side towards the end of the bed; the dipstick is tucked in by the back wheel on the passenger side under the wheel well; use the smaller nozzle (blue) hanging in the bed
+• Battery - passenger side between the wheels; hand-tightened cover, no tools needed; battery is brand new
+• Water - the battery cover also houses the overflow tank; the overflow tank is to the left of the battery; top off whenever temp gauge goes above halfway; use the bigger nozzle (clear) hanging in the bed
+• Tires - less than a year old
+• Radiator - less than a year old
+• Starter Motor - brand new
+
+Recommendations:
+1. Drive under 80 KPH (48 MPH)
+2. Avoid potholes, divots, manhole covers — 4-lug wheels don't absorb uneven surfaces well
+3. If you need a tow, get a flatbed. If not possible, tell driver not to go over 30 MPH
+4. Top off the overflow tank every week or two
+5. One quart of oil per year is plenty
+6. When insuring, make sure they know it's a "kei" truck — 3 cyl, 660cc. Keeps payment low
+7. Drive slow and defensive — only safety feature is the seat belt
+8. Tagami Auto Service for safety check — 1733 Kahai St, (808) 841-5009
+9. JDM Imports Hawaii for mechanical — Aaron Rideout, (808) 391-3425
+
+Helpful Links:
+• honda-acty.com/ha3-ha4-acty-truck/ — parts/accessories
+• oiwa.co — tips from a longtime owner
+• roadlancer.com/honda-mini-truck/ — owner tips
+• minitruckimports.com/honda-acty-maintenance-tips/`}</div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <div style={{ fontSize: 9, color: syncStatus === "saved" ? "#2ea84a" : syncStatus === "saving" ? "#c9a84c" : syncStatus === "offline" ? "#c0392b" : "#333", letterSpacing: 1 }}>
+              {syncStatus === "saved" ? "☁ SYNCED" : syncStatus === "saving" ? "☁ SAVING..." : syncStatus === "offline" ? "⚠ OFFLINE — saved locally" : ""}
+            </div>
+            <button onClick={() => {
+              const state = { issues, serviceLog, vehicleOdo, purchases, aftermarket: aftermarketItems };
+              const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+              const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+              a.download = "acty-backup-" + new Date().toISOString().slice(0, 10) + ".json"; a.click();
+            }}
+              style={{ background: "transparent", color: "#2e2e2a", border: "1px solid #2e2e2a", borderRadius: 3, padding: "6px 16px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit" }}>
+              Export Backup
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<ActyTracker />, document.getElementById("root"));
+</script>
+</body>
+</html>
