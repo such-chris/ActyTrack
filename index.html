@@ -47,31 +47,22 @@ const { useState, useEffect, useRef, useCallback } = React;
 
 /* ─── PERSISTENCE (cloud-only via JSONBin) ─── */
 const JSONBIN_KEY = "$2a$10$k8e6dDUkcBTWUYPEopWhEuKlQzn2yGacUCZugtl0JWrGJbzi.LC1i";
-const BIN_ID_KEY = "acty_bin_id_v3";
 const DATA_VERSION = 6;
 
-// One-time migration: if old bin exists, carry it forward
-(() => {
-  const oldId = localStorage.getItem("acty_bin_id_v2");
-  const newId = localStorage.getItem(BIN_ID_KEY);
-  if (oldId && !newId) localStorage.setItem(BIN_ID_KEY, oldId);
-})();
-
 async function cloudSave(state) {
-  const binId = localStorage.getItem(BIN_ID_KEY);
+  const binId = "69c0230aaa77b81da90aee10";
   try {
     if (binId) {
       await fetch("https://api.jsonbin.io/v3/b/" + binId, { method: "PUT", headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY }, body: JSON.stringify({ ...state, _v: DATA_VERSION }) });
     } else {
       const res = await fetch("https://api.jsonbin.io/v3/b", { method: "POST", headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY, "X-Bin-Name": "actytracker" }, body: JSON.stringify({ ...state, _v: DATA_VERSION }) });
       const data = await res.json();
-      if (data?.metadata?.id) localStorage.setItem(BIN_ID_KEY, data.metadata.id);
     }
   } catch {}
 }
 
 async function cloudLoad() {
-  const binId = localStorage.getItem(BIN_ID_KEY);
+  const binId = "69c0230aaa77b81da90aee10";
   if (!binId) return null;
   try { const res = await fetch("https://api.jsonbin.io/v3/b/" + binId + "/latest", { headers: { "X-Master-Key": JSONBIN_KEY } }); const d = await res.json(); return d?.record || null; } catch { return null; }
 }
