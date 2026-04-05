@@ -233,7 +233,7 @@ function AutoTextarea({ value, onChange, placeholder, style, ...props }) {
 }
 
 /* ─── APP ─── */
-function ActyTrack() {
+function ActyTracker() {
   const [tab, setTab] = useState("queue");
   // Work queue
   const [tasks, setTasksRaw] = useState(defaultTasks);
@@ -855,6 +855,7 @@ function ActyTrack() {
         <div style={{ borderLeft: "4px solid #c0392b", paddingLeft: 16, flex: 1 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#f0e6c8" }}>1994 Honda Acty</h1>
           <div style={{ fontSize: 10, color: "#c0392b", letterSpacing: 3, textTransform: "uppercase", marginTop: 4 }}>HA4 · 660cc · E07A</div>
+          <div style={{fontSize:9, color:"#555", padding:"2px 16px"}}>{localStorage.getItem(BIN_ID_KEY) || "no bin ID"}</div>
         </div>
         <button onClick={() => setAddMode(addMode ? null : "choose")}
           style={{ width: 44, height: 44, borderRadius: 8, background: "transparent", color: addMode ? "#c0392b" : "#2ea84a", border: "2px solid #e8e0c8", fontSize: 24, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, lineHeight: 1, paddingRight: addMode ? 2 : 0 }}>
