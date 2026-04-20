@@ -25,7 +25,7 @@
 <script>
 if ('serviceWorker' in navigator) {
   const swCode = `
-    const CACHE_NAME = 'acty-v2';
+    const CACHE_NAME = 'acty-v3';
     const URLS_TO_CACHE = ['./', './index.html'];
     self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(URLS_TO_CACHE)).then(() => self.skipWaiting())); });
     self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -48,7 +48,7 @@ const { useState, useEffect, useRef } = React;
 /* ─── PERSISTENCE ─── */
 const JSONBIN_KEY = "$2a$10$k8e6dDUkcBTWUYPEopWhEuKlQzn2yGacUCZugtl0JWrGJbzi.LC1i";
 const BIN_ID = "69c0230aaa77b81da90aee10";
-const DATA_VERSION = 6;
+const DATA_VERSION = 8;
 
 async function cloudSave(state) {
   try {
@@ -73,34 +73,145 @@ async function cloudLoad() {
 }
 
 /* ─── CONSTANTS ─── */
-const STAGES = ["monitor", "inspect", "purchase", "install"];
+const STAGES = ["inspect", "monitor", "tuneup", "purchase", "install"];
 const STAGE_CONFIG = {
-  monitor:  { label: "Monitor",  color: "#3a7fc1", icon: "◉" },
-  inspect:  { label: "Inspect",  color: "#d68910", icon: "⊙" },
-  purchase: { label: "Purchase", color: "#c9a84c", icon: "◎" },
-  install:  { label: "Install",  color: "#2ea84a", icon: "◈" },
+  inspect:  { label: "Inspect",  color: "#c0392b", icon: "magnify" },
+  monitor:  { label: "Monitor",  color: "#b8892e", icon: "clipboard" },
+  tuneup:   { label: "Tune-up",  color: "#3d8f4a", icon: "wrench" },
+  purchase: { label: "Purchase", color: "#3a7fb8", icon: "dollar" },
+  install:  { label: "Install",  color: "#7c4fb8", icon: "plus" },
 };
 const TYPES = ["maintenance", "repair", "modification"];
 const TYPE_CONFIG = {
-  maintenance:  { label: "Maintenance",  color: "#c0392b", abbr: "MNT" },
-  repair:       { label: "Repair",       color: "#d68910", abbr: "RPR" },
-  modification: { label: "Modification", color: "#7c3ac1", abbr: "MOD" },
+  maintenance:  { label: "Maintenance",  color: "#c0392b", abbr: "MAINT" },
+  repair:       { label: "Repair",       color: "#3a7fb8", abbr: "REPAIR" },
+  modification: { label: "Modification", color: "#b8892e", abbr: "MOD" },
 };
 const PRIORITIES = ["urgent", "thisweek", "upcoming", "longterm"];
 const PRIORITY_CONFIG = {
   urgent:   { label: "Urgent",    color: "#e74c3c", bg: "rgba(231,76,60,0.08)" },
-  thisweek: { label: "This Week", color: "#c0392b", bg: "rgba(192,57,43,0.06)" },
-  upcoming: { label: "Upcoming",  color: "#d68910", bg: "rgba(214,137,16,0.06)" },
+  thisweek: { label: "This Week", color: "#b8892e", bg: "rgba(184,137,46,0.06)" },
+  upcoming: { label: "Upcoming",  color: "#2ea84a", bg: "rgba(46,168,74,0.06)" },
   longterm: { label: "Long-term", color: "#2e86c1", bg: "rgba(46,134,193,0.06)" },
 };
 
 const PARTS_CATEGORIES = ["Engine", "Drivetrain", "Electric", "Brakes/Suspension", "Wheels/Tires", "Cosmetic"];
-const PARTS_CAT_COLORS = { Engine: "#c0392b", Drivetrain: "#d68910", Electric: "#c9a84c", "Brakes/Suspension": "#2ea84a", "Wheels/Tires": "#2e86c1", Cosmetic: "#7c3ac1" };
+const PARTS_CAT_COLORS = { Engine: "#c0392b", Drivetrain: "#b8892e", Electric: "#c9a84c", "Brakes/Suspension": "#3d8f4a", "Wheels/Tires": "#3a7fb8", Cosmetic: "#7c4fb8" };
 
-/* ─── HELPERS ─── */
-function fmt(val) { if (!val && val !== 0) return val; const d = String(val).replace(/[^0-9]/g, ""); if (!d) return String(val); return parseInt(d, 10).toLocaleString() + " km"; }
-function parseOdo(val) { if (!val) return 0; const d = String(val).replace(/[^0-9]/g, ""); return d ? parseInt(d, 10) : 0; }
+/* ─── STAGE ICONS (inline SVG) ─── */
+function StageIcon({ name, color, size }) {
+  const s = size || 11;
+  const stroke = color || "currentColor";
+  const common = { width: s, height: s, viewBox: "0 0 16 16", fill: "none", stroke, strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", style: { flexShrink: 0 } };
+  if (name === "magnify") return (
+    <svg {...common}><circle cx="7" cy="7" r="4.5" /><line x1="10.3" y1="10.3" x2="14" y2="14" /></svg>
+  );
+  if (name === "clipboard") return (
+    <svg {...common}><rect x="4" y="3" width="8" height="11" rx="1" /><path d="M6 3 V2 Q6 1.5 6.5 1.5 H9.5 Q10 1.5 10 2 V3" /><line x1="6" y1="7" x2="11" y2="7" /><line x1="6" y1="10" x2="10" y2="10" /></svg>
+  );
+  if (name === "wrench") return (
+    <svg {...common}><path d="M11.5 2.5 a3 3 0 0 0-3.8 3.8 L2 12 l2 2 l5.7-5.7 a3 3 0 0 0 3.8-3.8 L11 5 L9.5 3.5 Z" /></svg>
+  );
+  if (name === "dollar") return (
+    <svg {...common}><line x1="8" y1="1.5" x2="8" y2="14.5" /><path d="M11 4.5 H6.5 a2 2 0 0 0 0 4 H9.5 a2 2 0 0 1 0 4 H5" /></svg>
+  );
+  if (name === "plus") return (
+    <svg {...common} strokeWidth="2"><line x1="8" y1="2.5" x2="8" y2="13.5" /><line x1="2.5" y1="8" x2="13.5" y2="8" /></svg>
+  );
+  return null;
+}
 
+/* ─── FORMATTING HELPERS ─── */
+function fmtKm(val) {
+  if (!val && val !== 0) return "";
+  const d = String(val).replace(/[^0-9]/g, "");
+  if (!d) return String(val);
+  return parseInt(d, 10).toLocaleString() + " km";
+}
+function parseOdo(val) {
+  if (!val) return 0;
+  const d = String(val).replace(/[^0-9]/g, "");
+  return d ? parseInt(d, 10) : 0;
+}
+function fmtCost(val) {
+  if (val === null || val === undefined || val === "") return "";
+  const raw = String(val).replace(/[^0-9.]/g, "");
+  if (!raw) return "";
+  const n = parseFloat(raw);
+  if (isNaN(n)) return "";
+  return "$" + n.toFixed(2);
+}
+function parseCost(val) {
+  if (!val) return 0;
+  const raw = String(val).replace(/[^0-9.]/g, "");
+  return raw ? parseFloat(raw) || 0 : 0;
+}
+
+/* ─── MIGRATION ─── */
+// v8 data model:
+//   - purchases[] holds ALL parts/shopping items with optional taskId field
+//   - task.parts is removed (read from purchases.filter(p => p.taskId === task.id))
+//   - stage "maintain" (legacy) is remapped to "tuneup"
+// migrate() handles any prior shape: string parts, object parts, legacy stage names.
+function normalizePart(p, idx) {
+  if (!p) return null;
+  if (typeof p === "string") {
+    // "Name ($25.00)" or just "Name"
+    const match = p.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+    const name = match ? match[1].trim() : p.trim();
+    const cost = match ? fmtCost(match[2]) : "";
+    if (!name) return null;
+    return { name, cost, status: "tobuy" };
+  }
+  if (typeof p === "object") {
+    return {
+      name: p.name || p.item || "",
+      cost: p.cost || "",
+      status: p.status || "tobuy",
+    };
+  }
+  return null;
+}
+
+function migrate(cloud) {
+  if (!cloud) return null;
+  const existingPurchases = Array.isArray(cloud.purchases) ? cloud.purchases : [];
+  // Keep existing standalone purchases as-is, ensuring taskId field exists
+  const newPurchases = existingPurchases.map(p => ({
+    id: p.id,
+    item: p.item || "",
+    cost: p.cost || "",
+    status: p.status || "tobuy",
+    notes: p.notes || "",
+    partsCategory: p.partsCategory || "Engine",
+    partsType: p.partsType || "Aftermarket",
+    taskId: p.taskId != null ? p.taskId : null,
+  }));
+  // Flatten any task.parts into new purchases with taskId linkage
+  const newTasks = (cloud.tasks || []).map(t => {
+    const stage = t.stage === "maintain" ? "tuneup" : t.stage;
+    const parts = Array.isArray(t.parts) ? t.parts : [];
+    parts.forEach((p, idx) => {
+      const norm = normalizePart(p, idx);
+      if (!norm || !norm.name) return;
+      newPurchases.push({
+        id: Date.now() + Math.floor(Math.random() * 1000000) + idx + newPurchases.length,
+        item: norm.name,
+        cost: norm.cost,
+        status: norm.status,
+        notes: "",
+        partsCategory: "Engine",
+        partsType: "Aftermarket",
+        taskId: t.id,
+      });
+    });
+    const { parts: _discard, ...rest } = t;
+    return { ...rest, stage };
+  });
+  return { ...cloud, tasks: newTasks, purchases: newPurchases };
+}
+
+/* ─── RECURRING LOGIC ─── */
 function getRecurringDue(recurring, completedAtKm) {
   if (!recurring) return null;
   const r = {};
@@ -108,7 +219,6 @@ function getRecurringDue(recurring, completedAtKm) {
   if (recurring.monthsInterval) { const d = new Date(); d.setMonth(d.getMonth() + recurring.monthsInterval); r.dueByDate = d.toLocaleDateString("en-US", { month: "short", year: "numeric" }); }
   return r;
 }
-
 function buildRecurring(choice, currentOdo, kmVal, monthsVal) {
   if (!choice || choice === "none") return null;
   const odo = parseOdo(currentOdo);
@@ -118,7 +228,6 @@ function buildRecurring(choice, currentOdo, kmVal, monthsVal) {
   const r = { kmInterval: kmI || null, monthsInterval: moI || null };
   return { ...r, ...getRecurringDue(r, odo) };
 }
-
 function autoEscalate(tasks, currentOdo) {
   const odo = parseOdo(currentOdo);
   const now = new Date();
@@ -153,6 +262,38 @@ function AutoTextarea({ value, onChange, placeholder, style, ...props }) {
   );
 }
 
+/* ─── MILEAGE INPUT (auto-format on blur) ─── */
+function MileageInput({ value, onChange, placeholder, style }) {
+  const [raw, setRaw] = useState(value || "");
+  useEffect(() => { setRaw(value || ""); }, [value]);
+  return (
+    <input
+      value={raw}
+      onChange={e => setRaw(e.target.value)}
+      onBlur={() => { const f = fmtKm(raw); setRaw(f); onChange({ target: { value: f } }); }}
+      placeholder={placeholder}
+      style={style}
+      inputMode="numeric"
+    />
+  );
+}
+
+/* ─── COST INPUT (auto-format on blur) ─── */
+function CostInput({ value, onChange, placeholder, style }) {
+  const [raw, setRaw] = useState(value || "");
+  useEffect(() => { setRaw(value || ""); }, [value]);
+  return (
+    <input
+      value={raw}
+      onChange={e => setRaw(e.target.value)}
+      onBlur={() => { const f = fmtCost(raw); setRaw(f); onChange({ target: { value: f } }); }}
+      placeholder={placeholder}
+      style={style}
+      inputMode="decimal"
+    />
+  );
+}
+
 /* ─── APP ─── */
 function ActyTracker() {
   const [tab, setTab] = useState("queue");
@@ -168,11 +309,18 @@ function ActyTracker() {
   const [titleText, setTitleText] = useState("");
   const [editingMileage, setEditingMileage] = useState(null);
   const [mileageText, setMileageText] = useState("");
-  // Done flow
+  // Inline part editing on task cards
+  const [editingPartOnTask, setEditingPartOnTask] = useState(null); // { taskId, partId, field: "name" | "cost" }
+  const [partEditText, setPartEditText] = useState("");
+  const [addingPartToTask, setAddingPartToTask] = useState(null);
+  const [newPartName, setNewPartName] = useState("");
+  const [newPartCost, setNewPartCost] = useState("");
+  // Done flow (unified)
   const [doneId, setDoneId] = useState(null);
-  const [doneStep, setDoneStep] = useState(null);
   const [doneNote, setDoneNote] = useState("");
   const [doneMileage, setDoneMileage] = useState("");
+  const [doneLogToService, setDoneLogToService] = useState(true);
+  const [doneAddToParts, setDoneAddToParts] = useState(false);
   const [donePartCategory, setDonePartCategory] = useState("Engine");
   const [donePartType, setDonePartType] = useState("Aftermarket");
   const [repeatChoice, setRepeatChoice] = useState(null);
@@ -182,16 +330,12 @@ function ActyTracker() {
   const [addMode, setAddMode] = useState(null);
   const [addTitle, setAddTitle] = useState("");
   const [addNotes, setAddNotes] = useState("");
-  const [addStage, setAddStage] = useState("monitor");
+  const [addStage, setAddStage] = useState("inspect");
   const [addType, setAddType] = useState("repair");
   const [addPriority, setAddPriority] = useState("upcoming");
   const [addCost, setAddCost] = useState("");
   const [addPartsCategory, setAddPartsCategory] = useState("Engine");
   const [addPartsType, setAddPartsType] = useState("Aftermarket");
-  const [addShopItem, setAddShopItem] = useState("");
-  const [addShopCost, setAddShopCost] = useState("");
-  const [stagePickerShopItem, setStagePickerShopItem] = useState("");
-  const [stagePickerShopCost, setStagePickerShopCost] = useState("");
   // Delete
   const [deletingId, setDeletingId] = useState(null);
   const [deletingType, setDeletingType] = useState(null);
@@ -204,7 +348,9 @@ function ActyTracker() {
   const [expandedLogId, setExpandedLogId] = useState(null);
   const [editingLogField, setEditingLogField] = useState(null);
   const [logFieldText, setLogFieldText] = useState("");
-  // Purchases
+  const [editingLogPart, setEditingLogPart] = useState(null); // { logId, partIdx }
+  const [logPartText, setLogPartText] = useState("");
+  // Purchases (standalone)
   const [purchases, setPurchasesRaw] = useState([]);
   const [expandedPurchaseId, setExpandedPurchaseId] = useState(null);
   const [editingPurchaseNote, setEditingPurchaseNote] = useState(null);
@@ -219,9 +365,7 @@ function ActyTracker() {
   const [vehicleOdo, setVehicleOdoRaw] = useState("");
   const [aftermarketItems, setAftermarketItems] = useState([]);
   const [infoOpen, setInfoOpen] = useState(true);
-  const [prevOwnerOpen, setPrevOwnerOpen] = useState(false);
   const [aftermarketOpen, setAftermarketOpen] = useState(false);
-  const [contactsOpen, setContactsOpen] = useState(false);
   const [editingField, setEditingField] = useState(null);
   const [editingFieldValue, setEditingFieldValue] = useState("");
   const [expandedPartId, setExpandedPartId] = useState(null);
@@ -235,17 +379,18 @@ function ActyTracker() {
   function setTasks(updater) { setTasksRaw(updater); }
   function setPurchases(updater) { setPurchasesRaw(updater); }
 
-  // Load from cloud on mount
+  // Load from cloud on mount (with migration)
   const loaded = useRef(false);
   useEffect(() => {
     cloudLoad().then(cloud => {
       if (cloud) {
-        const odo = cloud.vehicleOdo || "";
-        setTasksRaw(autoEscalate(cloud.tasks || [], odo));
-        setServiceLogRaw(cloud.serviceLog || []);
-        setVehicleOdoRaw(cloud.vehicleOdo || "");
-        setPurchasesRaw(cloud.purchases || []);
-        setAftermarketItems(cloud.aftermarket || []);
+        const migrated = migrate(cloud);
+        const odo = migrated.vehicleOdo || "";
+        setTasksRaw(autoEscalate(migrated.tasks || [], odo));
+        setServiceLogRaw(migrated.serviceLog || []);
+        setVehicleOdoRaw(migrated.vehicleOdo || "");
+        setPurchasesRaw(migrated.purchases || []);
+        setAftermarketItems(migrated.aftermarket || []);
         setSyncStatus("saved");
       } else {
         setSyncStatus("offline");
@@ -286,64 +431,120 @@ function ActyTracker() {
     setDoneId(id);
     setDoneNote(task.notes || "");
     setDoneMileage(task.mileage || vehicleOdo || "");
+    setDoneLogToService(true);
+    setDoneAddToParts(task.type === "modification");
     setDonePartCategory("Engine");
     setDonePartType(task.type === "modification" ? "Aftermarket" : "OEM");
     setRepeatChoice(task.recurring ? (task.recurring.kmInterval && task.recurring.monthsInterval ? "both" : task.recurring.kmInterval ? "km" : "months") : null);
     setRepeatKm(task.recurring?.kmInterval ? String(task.recurring.kmInterval) : "");
     setRepeatMonths(task.recurring?.monthsInterval ? String(task.recurring.monthsInterval) : "");
-    if (task.stage === "monitor") setDoneStep("monitor_done");
-    else if (task.stage === "inspect") setDoneStep("inspect_done");
-    else if (task.stage === "purchase") setDoneStep("purchase_done");
-    else if (task.stage === "install") setDoneStep("install_done");
   }
 
-  function promoteToStage(task, newStage) {
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stage: newStage } : t));
-    setDoneId(null); setDoneStep(null); setExpandedId(null);
-  }
-
-  function resolveTask(task, logIt = true) {
-    if (logIt) {
-      const fmtM = fmt(doneMileage) || task.mileage || vehicleOdo;
-      if (doneMileage && doneMileage.trim()) setVehicleOdoRaw(fmt(doneMileage));
-      setServiceLogRaw(prev => [{ id: Date.now(), category: TYPE_CONFIG[task.type]?.label || task.type, title: task.title, date: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }), mileage: fmtM, notes: doneNote || task.notes || "", parts: task.parts || [] }, ...prev]);
+  function resolveTask(task) {
+    const fmtM = fmtKm(doneMileage) || task.mileage || vehicleOdo;
+    const taskPurchases = purchases.filter(p => p.taskId === task.id);
+    if (doneLogToService) {
+      const partStrings = taskPurchases.map(p => p.item + (p.cost ? ` (${p.cost})` : "")).filter(Boolean);
+      setServiceLogRaw(prev => [{
+        id: Date.now(),
+        category: TYPE_CONFIG[task.type]?.label || task.type,
+        title: task.title,
+        date: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+        mileage: fmtM,
+        notes: doneNote || task.notes || "",
+        parts: partStrings,
+      }, ...prev]);
     }
+    // Add to parts list
+    if (doneAddToParts) {
+      const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" });
+      setAftermarketItems(prev => [...prev, {
+        id: Date.now() + 1,
+        name: task.title + (doneNote ? " — " + doneNote : ""),
+        category: donePartCategory,
+        type: donePartType,
+        installedDate: dateStr,
+      }]);
+    }
+    // Update vehicle odo
+    if (doneMileage && doneMileage.trim()) setVehicleOdoRaw(fmtKm(doneMileage));
+    // Handle recurring
     const recurring = buildRecurring(repeatChoice, doneMileage || vehicleOdo, repeatKm, repeatMonths);
+    const newTaskId = Date.now() + 2;
+    // Always clear out this task's linked purchases (they've been consumed)
+    setPurchases(prev => {
+      const withoutTask = prev.filter(p => p.taskId !== task.id);
+      if (!recurring) return withoutTask;
+      // For recurring tasks, clone the purchases to the new task with fresh ids and status
+      const cloned = taskPurchases.map((p, i) => ({
+        ...p,
+        id: Date.now() + 100 + i + Math.floor(Math.random() * 10000),
+        status: "tobuy",
+        taskId: newTaskId,
+      }));
+      return [...withoutTask, ...cloned];
+    });
     if (recurring) {
       setTasks(prev => [...prev.filter(t => t.id !== task.id), {
-        id: Date.now() + 1, stage: "monitor", type: task.type, priority: "longterm",
-        title: task.title, notes: task.notes || "", mileage: null, parts: task.parts || [], recurring
+        id: newTaskId,
+        stage: "monitor",
+        type: task.type,
+        priority: "longterm",
+        title: task.title,
+        notes: task.notes || "",
+        mileage: null,
+        recurring,
       }]);
     } else {
       setTasks(prev => prev.filter(t => t.id !== task.id));
     }
     if (doneMileage && doneMileage.trim()) setTimeout(() => setTasksRaw(prev => autoEscalate(prev, doneMileage)), 100);
-    setDoneId(null); setDoneStep(null); setExpandedId(null); setRepeatChoice(null);
-  }
-
-  function addToShoppingList(task) {
-    const newParts = (task.parts || []).filter(p => p && !p.includes("(ordered"));
-    if (newParts.length > 0) {
-      setPurchasesRaw(prev => [...prev, ...newParts.map((p, i) => ({
-        id: Date.now() + i, item: p, cost: "", status: "tobuy", notes: "For: " + task.title, partsCategory: "Engine", partsType: "OEM"
-      }))]);
-    }
-    promoteToStage(task, "install");
-  }
-
-  function finishInstallLog(task) { resolveTask(task, true); }
-
-  function finishInstallWithParts(task) {
-    const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" });
-    setAftermarketItems(prev => [...prev, {
-      id: Date.now(), name: task.title + (doneNote ? " — " + doneNote : ""),
-      category: donePartCategory, type: donePartType, installedDate: dateStr
-    }]);
-    resolveTask(task, true);
+    setDoneId(null);
+    setExpandedId(null);
+    setRepeatChoice(null);
   }
 
   function saveNote(id, e) { e.stopPropagation(); setTasks(prev => prev.map(t => t.id === id ? { ...t, notes: noteText } : t)); setEditingNote(null); }
-  function saveMileage(id, e) { e.stopPropagation(); setTasks(prev => prev.map(t => t.id === id ? { ...t, mileage: fmt(mileageText) } : t)); setEditingMileage(null); }
+  function saveMileage(id, e) { e.stopPropagation(); setTasks(prev => prev.map(t => t.id === id ? { ...t, mileage: fmtKm(mileageText) } : t)); setEditingMileage(null); }
+
+  /* ─── TASK PART ACTIONS ─── */
+  function addPartToTask(taskId) {
+    const nm = newPartName.trim();
+    if (!nm) return;
+    const newPurchase = {
+      id: Date.now(),
+      item: nm,
+      cost: fmtCost(newPartCost),
+      status: "tobuy",
+      notes: "",
+      partsCategory: "Engine",
+      partsType: "Aftermarket",
+      taskId,
+    };
+    setPurchases(prev => [...prev, newPurchase]);
+    setNewPartName(""); setNewPartCost(""); setAddingPartToTask(null);
+  }
+  function updateTaskPart(taskId, partId, updates) {
+    // purchases-based update: translate name→item, keep cost/status as-is
+    const mapped = { ...updates };
+    if (mapped.name !== undefined) { mapped.item = mapped.name; delete mapped.name; }
+    setPurchases(prev => prev.map(p => p.id === partId ? { ...p, ...mapped } : p));
+  }
+  function removeTaskPart(taskId, partId) {
+    setPurchases(prev => prev.filter(p => p.id !== partId));
+  }
+  // Toggle part status: tobuy → ordered → received flow
+  function advanceTaskPart(task, partId) {
+    const part = purchases.find(p => p.id === partId && p.taskId === task.id);
+    if (!part) return;
+    if (part.status === "tobuy") {
+      setPurchases(prev => prev.map(p => p.id === partId ? { ...p, status: "ordered" } : p));
+    } else if (part.status === "ordered") {
+      // Received — open the unified receive menu (shared with shopping list)
+      setReceivingId(partId);
+      setReceivingStep("choose");
+    }
+  }
 
   /* ─── STYLES ─── */
   const sh = { fontSize: 10, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 };
@@ -383,10 +584,110 @@ function ActyTracker() {
         {repeatChoice && repeatChoice !== "none" && (repeatKm || repeatMonths) && doneMileage && (
           <div style={{ fontSize: 10, color: "#555", marginTop: 4 }}>
             Next due:{" "}
-            {(repeatChoice === "km" || repeatChoice === "both") && repeatKm && <span style={{ color: "#c9a84c" }}>@ {fmt(parseOdo(doneMileage) + parseInt(repeatKm.replace(/[^0-9]/g, "") || "0", 10))}</span>}
+            {(repeatChoice === "km" || repeatChoice === "both") && repeatKm && <span style={{ color: "#c9a84c" }}>@ {fmtKm(parseOdo(doneMileage) + parseInt(repeatKm.replace(/[^0-9]/g, "") || "0", 10))}</span>}
             {repeatChoice === "both" && repeatKm && repeatMonths && <span style={{ color: "#555" }}> or </span>}
             {(repeatChoice === "months" || repeatChoice === "both") && repeatMonths && <span style={{ color: "#c9a84c" }}>{(() => { const d = new Date(); d.setMonth(d.getMonth() + parseInt(repeatMonths || "0", 10)); return d.toLocaleDateString("en-US", { month: "short", year: "numeric" }); })()}</span>}
           </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ─── RENDER TASK PARTS (inline editable; source = purchases linked by taskId) ─── */
+  function renderTaskParts(task) {
+    // Read parts from the unified purchases array, filtered by this task's id.
+    // Map `item` → `name` so the render logic below stays unchanged.
+    const parts = purchases
+      .filter(p => p.taskId === task.id)
+      .map(p => ({ ...p, name: p.item }));
+    const isAdding = addingPartToTask === task.id;
+    return (
+      <div>
+        <div style={sh}>Parts</div>
+        {parts.length === 0 && !isAdding && (
+          <div style={{ fontSize: 11, color: "#444", marginBottom: 6 }}>No parts</div>
+        )}
+        {parts.map(p => {
+          const isEditingName = editingPartOnTask?.taskId === task.id && editingPartOnTask?.partId === p.id && editingPartOnTask?.field === "name";
+          const isEditingCost = editingPartOnTask?.taskId === task.id && editingPartOnTask?.partId === p.id && editingPartOnTask?.field === "cost";
+          const statusColor = p.status === "received" ? "#2ea84a" : p.status === "ordered" ? "#b8892e" : "#c9a84c";
+          const statusChar = p.status === "received" ? "●" : p.status === "ordered" ? "◉" : "○";
+          const isReceiving = receivingId === p.id;
+          return (
+            <div key={p.id}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, lineHeight: 1.9, paddingTop: 2, paddingBottom: 2 }}>
+                <span onClick={e => { e.stopPropagation(); advanceTaskPart(task, p.id); }} style={{ color: statusColor, cursor: "pointer", fontSize: 14, width: 16, textAlign: "center" }}>{statusChar}</span>
+                {isEditingName ? (
+                  <input autoFocus value={partEditText} onChange={e => setPartEditText(e.target.value)}
+                    onBlur={() => { updateTaskPart(task.id, p.id, { name: partEditText }); setEditingPartOnTask(null); }}
+                    onKeyDown={e => { if (e.key === "Enter") { updateTaskPart(task.id, p.id, { name: partEditText }); setEditingPartOnTask(null); } }}
+                    style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "3px 6px", fontSize: 12, fontFamily: "inherit" }} />
+                ) : (
+                  <span onClick={e => { e.stopPropagation(); setEditingPartOnTask({ taskId: task.id, partId: p.id, field: "name" }); setPartEditText(p.name); }} style={{ color: "#b8b0a0", flex: 1, cursor: "pointer", textDecoration: "underline", textDecorationColor: "#2e2e2a", textUnderlineOffset: 3 }}>
+                    {p.name || <em style={{ color: "#555" }}>unnamed</em>}
+                  </span>
+                )}
+                {isEditingCost ? (
+                  <input autoFocus value={partEditText} onChange={e => setPartEditText(e.target.value)}
+                    onBlur={() => { updateTaskPart(task.id, p.id, { cost: fmtCost(partEditText) }); setEditingPartOnTask(null); }}
+                    onKeyDown={e => { if (e.key === "Enter") { updateTaskPart(task.id, p.id, { cost: fmtCost(partEditText) }); setEditingPartOnTask(null); } }}
+                    style={{ width: 80, background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c", borderRadius: 3, padding: "3px 6px", fontSize: 11, fontFamily: "inherit" }} inputMode="decimal" />
+                ) : (
+                  <span onClick={e => { e.stopPropagation(); setEditingPartOnTask({ taskId: task.id, partId: p.id, field: "cost" }); setPartEditText(p.cost || ""); }} style={{ color: p.cost ? "#c9a84c" : "#444", fontSize: 11, cursor: "pointer", minWidth: 44, textAlign: "right" }}>
+                    {p.cost || "—"}
+                  </span>
+                )}
+                <span style={{ fontSize: 8, color: statusColor, letterSpacing: 1, width: 52, textAlign: "right", textTransform: "uppercase" }}>
+                  {p.status === "tobuy" ? "TO BUY" : p.status === "ordered" ? "ORDERED" : "RECEIVED"}
+                </span>
+                <span onClick={e => { e.stopPropagation(); removeTaskPart(task.id, p.id); }} style={{ fontSize: 12, color: "#444", cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>✕</span>
+              </div>
+              {isReceiving && (
+                <div style={{ background: "#252520", border: "1px solid #c9a84c44", borderRadius: 4, padding: "10px 14px", marginTop: 6, marginBottom: 6, marginLeft: 24 }}>
+                  {(!receivingStep || receivingStep === "choose") && (
+                    <div>
+                      <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Received — what next?</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button onClick={e => { e.stopPropagation(); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stage: "install" } : t)); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Move task to Install</button>
+                        <button onClick={e => { e.stopPropagation(); setReceivingStep("parts"); }} style={{ background: "#7c4fb822", color: "#7c4fb8", border: "1px solid #7c4fb855", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Parts List</button>
+                        <button onClick={e => { e.stopPropagation(); setReceivingStep("log"); }} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Service Log</button>
+                        <button onClick={e => { e.stopPropagation(); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#55555522", color: "#888", border: "1px solid #55555555", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Just Remove</button>
+                        <button onClick={e => { e.stopPropagation(); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {receivingStep === "parts" && (
+                    <div>
+                      <div style={{ fontSize: 10, color: "#7c4fb8", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Add to Parts List</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button onClick={e => { e.stopPropagation(); const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setAftermarketItems(prev => [...prev, { id: Date.now(), name: p.name, category: p.partsCategory || "Cosmetic", type: p.partsType || "Aftermarket", installedDate: dateStr, notes: p.notes || "" }]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#7c4fb8", color: "#fff", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add to Parts List</button>
+                        <button onClick={e => { e.stopPropagation(); setReceivingStep("choose"); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
+                      </div>
+                    </div>
+                  )}
+                  {receivingStep === "log" && (
+                    <div>
+                      <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Log to Service History</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button onClick={e => { e.stopPropagation(); const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setServiceLogRaw(prev => [{ id: Date.now(), category: "Maintenance", title: p.name, date: dateStr, mileage: vehicleOdo || "", notes: p.notes || "Purchased and received.", parts: [p.name + (p.cost ? ` (${p.cost})` : "")] }, ...prev]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Log It</button>
+                        <button onClick={e => { e.stopPropagation(); setReceivingStep("choose"); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {isAdding ? (
+          <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+            <input autoFocus value={newPartName} onChange={e => setNewPartName(e.target.value)} placeholder="Part name..." style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "5px 8px", fontSize: 12, fontFamily: "inherit" }} />
+            <CostInput value={newPartCost} onChange={e => setNewPartCost(e.target.value)} placeholder="Cost" style={{ width: 80, background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c", borderRadius: 3, padding: "5px 8px", fontSize: 11, fontFamily: "inherit", boxSizing: "border-box" }} />
+            <button onClick={e => { e.stopPropagation(); addPartToTask(task.id); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
+            <button onClick={e => { e.stopPropagation(); setAddingPartToTask(null); setNewPartName(""); setNewPartCost(""); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+          </div>
+        ) : (
+          <div onClick={e => { e.stopPropagation(); setAddingPartToTask(task.id); }} style={{ fontSize: 10, color: "#c9a84c", cursor: "pointer", marginTop: 6, letterSpacing: 1 }}>+ Add part</div>
         )}
       </div>
     );
@@ -401,6 +702,7 @@ function ActyTracker() {
     const isEN = editingNote === task.id;
     const isEM = editingMileage === task.id;
     const isET = editingTitle === task.id;
+    const isDone = doneId === task.id;
 
     return (
       <div key={task.id} id={"task-" + task.id} style={{ background: "#222220", border: "1px solid #2e2e2a", borderLeft: `3px solid ${sc.color}`, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
@@ -408,12 +710,13 @@ function ActyTracker() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: "#f0e6c8" }}>{task.title}</span>
             <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 9, color: sc.color, border: `1px solid ${sc.color}44`, borderRadius: 2, padding: "1px 6px", letterSpacing: 1 }}>{sc.icon} {sc.label}</span>
-              <span style={{ fontSize: 9, color: tc.color, border: `1px solid ${tc.color}44`, borderRadius: 2, padding: "1px 6px", letterSpacing: 1 }}>{tc.abbr}</span>
+              <span style={{ fontSize: 9, color: pc.color, border: `1px solid ${pc.color}66`, borderRadius: 2, padding: "1px 6px", letterSpacing: 1 }}>{pc.label.toUpperCase()}</span>
+              <span style={{ fontSize: 9, color: sc.color, border: `1px solid ${sc.color}66`, borderRadius: 2, padding: "1px 6px", letterSpacing: 1, display: "inline-flex", alignItems: "center", gap: 4 }}><StageIcon name={sc.icon} color={sc.color} size={10} /> {sc.label}</span>
+              <span style={{ fontSize: 9, color: tc.color, border: `1px solid ${tc.color}66`, borderRadius: 2, padding: "1px 6px", letterSpacing: 1 }}>{tc.abbr}</span>
               {task.recurring && task.recurring.dueAtKm && (() => {
                 const rem = task.recurring.dueAtKm - parseOdo(vehicleOdo);
                 const overdue = rem <= 0;
-                return <span style={{ fontSize: 9, color: overdue ? "#e74c3c" : "#c9a84c", letterSpacing: 1 }}>{overdue ? "OVERDUE" : `due @ ${fmt(task.recurring.dueAtKm)}`}</span>;
+                return <span style={{ fontSize: 9, color: overdue ? "#e74c3c" : "#c9a84c", letterSpacing: 1 }}>{overdue ? "OVERDUE" : `due @ ${fmtKm(task.recurring.dueAtKm)}`}</span>;
               })()}
               {task.recurring && task.recurring.dueByDate && !task.recurring.dueAtKm && (
                 <span style={{ fontSize: 9, color: new Date(task.recurring.dueByDate) < new Date() ? "#e74c3c" : "#c9a84c", letterSpacing: 1 }}>{new Date(task.recurring.dueByDate) < new Date() ? "OVERDUE" : `due ${task.recurring.dueByDate}`}</span>
@@ -424,15 +727,18 @@ function ActyTracker() {
           <span onClick={e => { e.stopPropagation(); setDeletingId(task.id); setDeletingType("task"); }} style={{ fontSize: 14, color: "#555", cursor: "pointer", padding: "4px", lineHeight: 1 }}>✕</span>
         </div>
 
-        {deletingId === task.id && deletingType === "task" && (
-          <div style={{ background: "#2a1a1a", borderTop: "1px solid #c0392b44", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 11, color: "#c0392b" }}>Delete this task?</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={e => { e.stopPropagation(); setTasks(prev => prev.filter(t => t.id !== task.id)); setDeletingId(null); }} style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
-              <button onClick={e => { e.stopPropagation(); setDeletingId(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+        {deletingId === task.id && deletingType === "task" && (() => {
+          const linkedCount = purchases.filter(p => p.taskId === task.id).length;
+          return (
+            <div style={{ background: "#2a1a1a", borderTop: "1px solid #c0392b44", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <span style={{ fontSize: 11, color: "#c0392b" }}>{linkedCount > 0 ? `Delete task + ${linkedCount} linked part${linkedCount !== 1 ? "s" : ""}?` : "Delete this task?"}</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={e => { e.stopPropagation(); setPurchases(prev => prev.filter(p => p.taskId !== task.id)); setTasks(prev => prev.filter(t => t.id !== task.id)); setDeletingId(null); }} style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                <button onClick={e => { e.stopPropagation(); setDeletingId(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {!isExp && <div onClick={() => setExpandedId(task.id)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, marginTop: -4 }}><span style={{ fontSize: 10, color: "#333" }}>▼</span></div>}
 
@@ -454,7 +760,7 @@ function ActyTracker() {
               <div style={sh}>Mileage</div>
               {isEM ? (
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input value={mileageText} onChange={e => setMileageText(e.target.value)} placeholder="e.g. 88734 km" style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit", width: 140 }} />
+                  <MileageInput value={mileageText} onChange={e => setMileageText(e.target.value)} placeholder="e.g. 88734" style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit", width: 140 }} />
                   <button onClick={e => saveMileage(task.id, e)} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
                   <button onClick={e => { e.stopPropagation(); setEditingMileage(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                 </div>
@@ -483,43 +789,17 @@ function ActyTracker() {
                   {task.recurring.kmInterval && <span>Every {task.recurring.kmInterval.toLocaleString()} km</span>}
                   {task.recurring.kmInterval && task.recurring.monthsInterval && <span> or </span>}
                   {task.recurring.monthsInterval && <span>Every {task.recurring.monthsInterval} months</span>}
-                  {task.recurring.dueAtKm && <span style={{ color: "#888" }}> · Next @ {fmt(task.recurring.dueAtKm)}</span>}
+                  {task.recurring.dueAtKm && <span style={{ color: "#888" }}> · Next @ {fmtKm(task.recurring.dueAtKm)}</span>}
                   {task.recurring.dueByDate && <span style={{ color: "#888" }}> · Next by {task.recurring.dueByDate}</span>}
                 </div>
               </div>
             )}
-            {task.parts && task.parts.length > 0 && <div><div style={sh}>Parts / Materials</div><ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#9a9080", lineHeight: 1.9 }}>{task.parts.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
-            {task.stage === "purchase" && (() => {
-              const related = purchases.filter(p => (p.notes || "").includes("For: " + task.title) || (task.parts || []).some(pt => p.item === pt || p.item.includes(pt.split(" (")[0])));
-              const toBuy = related.filter(p => p.status === "tobuy");
-              const ordered = related.filter(p => p.status === "ordered");
-              if (toBuy.length === 0 && ordered.length === 0) return null;
-              return (
-                <div>
-                  <div style={sh}>Shopping List</div>
-                  {toBuy.map(p => (
-                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, lineHeight: 1.9 }}>
-                      <span style={{ color: "#c9a84c" }}>○</span>
-                      <span style={{ color: "#b8b0a0", flex: 1 }}>{p.item}</span>
-                      {p.cost && <span style={{ color: "#c9a84c", fontSize: 11 }}>{p.cost}</span>}
-                      <span style={{ fontSize: 9, color: "#555", letterSpacing: 1 }}>TO BUY</span>
-                    </div>
-                  ))}
-                  {ordered.map(p => (
-                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, lineHeight: 1.9 }}>
-                      <span style={{ color: "#d68910" }}>◉</span>
-                      <span style={{ color: "#b8b0a0", flex: 1 }}>{p.item}</span>
-                      {p.cost && <span style={{ color: "#c9a84c", fontSize: 11 }}>{p.cost}</span>}
-                      <span style={{ fontSize: 9, color: "#d68910", letterSpacing: 1 }}>ORDERED</span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
+
+            {renderTaskParts(task)}
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", paddingTop: 4 }}>
               <button onClick={e => { e.stopPropagation(); setPickerId(pickerId === task.id && pickerField === "priority" ? null : task.id); setPickerField("priority"); }} style={{ background: pickerId === task.id && pickerField === "priority" ? pc.color + "22" : "transparent", color: pc.color, border: `1px solid ${pc.color}55`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{pc.label}</button>
-              <button onClick={e => { e.stopPropagation(); setPickerId(pickerId === task.id && pickerField === "stage" ? null : task.id); setPickerField("stage"); }} style={{ background: pickerId === task.id && pickerField === "stage" ? sc.color + "22" : "transparent", color: sc.color, border: `1px solid ${sc.color}55`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{sc.icon} {sc.label}</button>
+              <button onClick={e => { e.stopPropagation(); setPickerId(pickerId === task.id && pickerField === "stage" ? null : task.id); setPickerField("stage"); }} style={{ background: pickerId === task.id && pickerField === "stage" ? sc.color + "22" : "transparent", color: sc.color, border: `1px solid ${sc.color}55`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5 }}><StageIcon name={sc.icon} color={sc.color} size={11} /> {sc.label}</button>
               <button onClick={e => { e.stopPropagation(); setPickerId(pickerId === task.id && pickerField === "type" ? null : task.id); setPickerField("type"); }} style={{ background: pickerId === task.id && pickerField === "type" ? tc.color + "22" : "transparent", color: tc.color, border: `1px solid ${tc.color}55`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{tc.abbr}</button>
               <button onClick={e => startDone(task.id, e)} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✓ Done</button>
             </div>
@@ -538,25 +818,8 @@ function ActyTracker() {
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {STAGES.map(s => {
                     const cfg = STAGE_CONFIG[s]; const active = task.stage === s;
-                    if (s === "purchase" && task.stage !== "purchase") {
-                      return <button key={s} onClick={e => { e.stopPropagation(); setPickerField("stage_purchase"); setStagePickerShopItem(""); setStagePickerShopCost(""); }} style={{ background: "transparent", color: cfg.color, border: `1px solid ${cfg.color}44`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{cfg.icon} {cfg.label}</button>;
-                    }
-                    return <button key={s} onClick={e => { e.stopPropagation(); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stage: s } : t)); setPickerId(null); }} style={{ background: active ? cfg.color + "33" : "transparent", color: active ? cfg.color : "#555", border: `1px solid ${active ? cfg.color + "88" : "#2e2e2a"}`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: active ? 700 : 400 }}>{cfg.icon} {cfg.label}</button>;
+                    return <button key={s} onClick={e => { e.stopPropagation(); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stage: s } : t)); setPickerId(null); }} style={{ background: active ? cfg.color + "33" : "transparent", color: active ? cfg.color : "#555", border: `1px solid ${active ? cfg.color + "88" : "#2e2e2a"}`, borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: active ? 700 : 400, display: "inline-flex", alignItems: "center", gap: 5 }}><StageIcon name={cfg.icon} color={active ? cfg.color : "#555"} size={11} /> {cfg.label}</button>;
                   })}
-                </div>
-              </div>
-            )}
-
-            {pickerId === task.id && pickerField === "stage_purchase" && (
-              <div style={{ paddingTop: 8 }}>
-                <div style={{ fontSize: 9, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Add to Shopping List? (optional)</div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                  <input value={stagePickerShopItem} onChange={e => setStagePickerShopItem(e.target.value)} placeholder="Item name..." style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c44", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                  <input value={stagePickerShopCost} onChange={e => setStagePickerShopCost(e.target.value)} placeholder="Cost" style={{ width: 80, background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c44", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={e => { e.stopPropagation(); if (stagePickerShopItem.trim()) { setPurchasesRaw(prev => [...prev, { id: Date.now() + 1, item: stagePickerShopItem.trim(), cost: stagePickerShopCost, status: "tobuy", notes: "For: " + task.title, partsCategory: "Engine", partsType: "OEM" }]); } setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stage: "purchase" } : t)); setPickerId(null); setPickerField(null); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{stagePickerShopItem.trim() ? "Move + Add Item" : "Move to Purchase"}</button>
-                  <button onClick={e => { e.stopPropagation(); setPickerField("stage"); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
                 </div>
               </div>
             )}
@@ -570,89 +833,45 @@ function ActyTracker() {
               </div>
             )}
 
-            {doneId === task.id && doneStep === "monitor_done" && (
-              <div style={{ background: "#252520", border: "1px solid #3a7fc144", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
-                <div style={{ fontSize: 10, color: "#3a7fc1", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Monitoring Complete — What Next?</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={e => { e.stopPropagation(); promoteToStage(task, "inspect"); }} style={{ background: "#d6891022", color: "#d68910", border: "1px solid #d6891055", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Inspect</button>
-                  <button onClick={e => { e.stopPropagation(); setStagePickerShopItem(""); setStagePickerShopCost(""); setDoneStep("done_to_purchase"); }} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Purchase</button>
-                  <button onClick={e => { e.stopPropagation(); promoteToStage(task, "install"); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Install</button>
-                  <button onClick={e => { e.stopPropagation(); setDoneStep("resolve"); }} style={{ background: "#55555522", color: "#888", border: "1px solid #55555555", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Resolve (no action)</button>
-                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-                </div>
-              </div>
-            )}
+            {/* ─── UNIFIED DONE FLOW ─── */}
+            {isDone && (
+              <div style={{ background: "#252520", border: `1px solid ${sc.color}44`, borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: sc.color, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Complete {sc.label} — Log & Remove</div>
+                <MileageInput value={doneMileage} onChange={e => setDoneMileage(e.target.value)} placeholder="Mileage (e.g. 89100)" style={{ width: "100%", background: "#1a1a18", color: "#c9a84c", border: `1px solid ${sc.color}66`, borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" }} />
+                <AutoTextarea value={doneNote} onChange={e => setDoneNote(e.target.value)} placeholder="Note (optional)" style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: `1px solid ${sc.color}66`, borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: 10 }} />
 
-            {doneId === task.id && doneStep === "inspect_done" && (
-              <div style={{ background: "#252520", border: "1px solid #d6891044", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
-                <div style={{ fontSize: 10, color: "#d68910", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Inspection Complete — What Next?</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={e => { e.stopPropagation(); setDoneStep("resolve"); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Passed ✓ (resolve)</button>
-                  <button onClick={e => { e.stopPropagation(); setStagePickerShopItem(""); setStagePickerShopCost(""); setDoneStep("done_to_purchase"); }} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Needs work → Purchase</button>
-                  <button onClick={e => { e.stopPropagation(); promoteToStage(task, "install"); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Needs work → Install (have parts)</button>
-                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                {/* Toggles */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  <button onClick={e => { e.stopPropagation(); setDoneLogToService(!doneLogToService); }} style={{
+                    flex: 1, minWidth: 140, background: doneLogToService ? "#2ea84a22" : "transparent",
+                    color: doneLogToService ? "#2ea84a" : "#555",
+                    border: `1px solid ${doneLogToService ? "#2ea84a66" : "#2e2e2a"}`,
+                    borderRadius: 3, padding: "8px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1
+                  }}>{doneLogToService ? "☑" : "☐"} Log to Service History</button>
+                  <button onClick={e => { e.stopPropagation(); setDoneAddToParts(!doneAddToParts); }} style={{
+                    flex: 1, minWidth: 140, background: doneAddToParts ? "#7c4fb822" : "transparent",
+                    color: doneAddToParts ? "#7c4fb8" : "#555",
+                    border: `1px solid ${doneAddToParts ? "#7c4fb866" : "#2e2e2a"}`,
+                    borderRadius: 3, padding: "8px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1
+                  }}>{doneAddToParts ? "☑" : "☐"} Add to Parts List</button>
                 </div>
-              </div>
-            )}
 
-            {doneId === task.id && doneStep === "done_to_purchase" && (
-              <div style={{ background: "#252520", border: "1px solid #c9a84c44", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
-                <div style={{ fontSize: 9, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Add to Shopping List? (optional)</div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                  <input value={stagePickerShopItem} onChange={e => setStagePickerShopItem(e.target.value)} placeholder="Item name..." style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c44", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                  <input value={stagePickerShopCost} onChange={e => setStagePickerShopCost(e.target.value)} placeholder="Cost" style={{ width: 80, background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c44", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={e => { e.stopPropagation(); if (stagePickerShopItem.trim()) { setPurchasesRaw(prev => [...prev, { id: Date.now() + 1, item: stagePickerShopItem.trim(), cost: stagePickerShopCost, status: "tobuy", notes: "For: " + task.title, partsCategory: "Engine", partsType: "OEM" }]); } promoteToStage(task, "purchase"); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{stagePickerShopItem.trim() ? "Move + Add Item" : "Move to Purchase"}</button>
-                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {doneId === task.id && doneStep === "purchase_done" && (
-              <div style={{ background: "#252520", border: "1px solid #c9a84c44", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
-                <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Purchase Stage — What Next?</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={e => { e.stopPropagation(); addToShoppingList(task); }} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add parts to Shopping List → Install</button>
-                  <button onClick={e => { e.stopPropagation(); promoteToStage(task, "install"); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Already have parts → Install</button>
-                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {doneId === task.id && doneStep === "install_done" && (
-              <div style={{ background: "#252520", border: "1px solid #2ea84a44", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
-                <div style={{ fontSize: 10, color: "#2ea84a", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Install Complete — Log It</div>
-                <input value={doneMileage} onChange={e => setDoneMileage(e.target.value)} placeholder="Mileage (e.g. 89,100 km)" style={{ width: "100%", background: "#1a1a18", color: "#c9a84c", border: "1px solid #2ea84a", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" }} />
-                <AutoTextarea value={doneNote} onChange={e => setDoneNote(e.target.value)} placeholder="Service log note (optional)" style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: 8 }} />
-                {renderRepeatUI()}
-                {task.type === "modification" && (
+                {/* Parts List config (only if adding) */}
+                {doneAddToParts && (
                   <div style={{ borderTop: "1px solid #2a2a26", paddingTop: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 9, color: "#7c3ac1", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Add to Parts List?</div>
+                    <div style={{ fontSize: 9, color: "#7c4fb8", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Parts List Entry</div>
                     <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                       <button onClick={() => { const i = PARTS_CATEGORIES.indexOf(donePartCategory); setDonePartCategory(PARTS_CATEGORIES[(i + 1) % PARTS_CATEGORIES.length]); }} style={{ flex: 1, background: "transparent", color: PARTS_CAT_COLORS[donePartCategory], border: `1px solid ${PARTS_CAT_COLORS[donePartCategory]}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{donePartCategory} →</button>
                       <button onClick={() => setDonePartType(donePartType === "OEM" ? "Aftermarket" : "OEM")} style={{ width: 120, background: "transparent", color: donePartType === "OEM" ? "#c0392b" : "#2e86c1", border: `1px solid ${donePartType === "OEM" ? "#c0392b" : "#2e86c1"}55`, borderRadius: 3, padding: "6px 8px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{donePartType} →</button>
                     </div>
                   </div>
                 )}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={e => { e.stopPropagation(); finishInstallLog(task); }} style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Log to Service History</button>
-                  {task.type === "modification" && <button onClick={e => { e.stopPropagation(); finishInstallWithParts(task); }} style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Log + Add to Parts List</button>}
-                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); setRepeatChoice(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-                </div>
-              </div>
-            )}
 
-            {doneId === task.id && doneStep === "resolve" && (
-              <div style={{ background: "#252520", border: "1px solid #55555544", borderRadius: 4, padding: "12px 14px", marginTop: 4 }}>
-                <div style={{ fontSize: 10, color: "#888", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Resolve — Log & Remove</div>
-                <input value={doneMileage} onChange={e => setDoneMileage(e.target.value)} placeholder="Mileage (optional)" style={{ width: "100%", background: "#1a1a18", color: "#c9a84c", border: "1px solid #555", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" }} />
-                <AutoTextarea value={doneNote} onChange={e => setDoneNote(e.target.value)} placeholder="Note (optional)" style={{ width: "100%", background: "#1a1a18", color: "#e8e0c8", border: "1px solid #555", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginBottom: 8 }} />
                 {renderRepeatUI()}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={e => { e.stopPropagation(); resolveTask(task, true); }} style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Resolve + Log</button>
-                  <button onClick={e => { e.stopPropagation(); resolveTask(task, false); }} style={{ background: "#55555533", color: "#888", border: "1px solid #55555555", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Resolve (no log)</button>
-                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setDoneStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={e => { e.stopPropagation(); resolveTask(task); }} style={{ background: sc.color, color: "#1a1a18", border: "none", borderRadius: 3, padding: "7px 16px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Complete</button>
+                  <button onClick={e => { e.stopPropagation(); setDoneId(null); setRepeatChoice(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "7px 16px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                 </div>
               </div>
             )}
@@ -668,7 +887,7 @@ function ActyTracker() {
     { key: "queue", label: "Work Queue", color: "#c0392b" },
     { key: "purchases", label: "Shopping List", color: "#c9a84c" },
     { key: "log", label: "Service Log", color: "#2ea84a" },
-    { key: "vehicle", label: "Vehicle Info", color: "#7c3ac1" },
+    { key: "vehicle", label: "Vehicle Info", color: "#7c4fb8" },
   ];
 
   const filteredLog = serviceLog.filter(i => logFilter === "All" || i.category === logFilter);
@@ -723,7 +942,7 @@ function ActyTracker() {
             <div>
               <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Starting Stage</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {STAGES.map(s => { const cfg = STAGE_CONFIG[s]; return <button key={s} onClick={() => setAddStage(s)} style={{ background: addStage === s ? cfg.color + "22" : "transparent", color: addStage === s ? cfg.color : "#444", border: `1px solid ${addStage === s ? cfg.color + "66" : "#2e2e2a"}`, borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit" }}>{cfg.icon} {cfg.label}</button>; })}
+                {STAGES.map(s => { const cfg = STAGE_CONFIG[s]; const active = addStage === s; return <button key={s} onClick={() => setAddStage(s)} style={{ background: active ? cfg.color + "22" : "transparent", color: active ? cfg.color : "#444", border: `1px solid ${active ? cfg.color + "66" : "#2e2e2a"}`, borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5 }}><StageIcon name={cfg.icon} color={active ? cfg.color : "#444"} size={10} /> {cfg.label}</button>; })}
               </div>
             </div>
             <div>
@@ -738,17 +957,8 @@ function ActyTracker() {
                 {PRIORITIES.map(p => { const cfg = PRIORITY_CONFIG[p]; return <button key={p} onClick={() => setAddPriority(p)} style={{ background: addPriority === p ? cfg.color + "22" : "transparent", color: addPriority === p ? cfg.color : "#444", border: `1px solid ${addPriority === p ? cfg.color + "66" : "#2e2e2a"}`, borderRadius: 3, padding: "4px 10px", fontSize: 10, cursor: "pointer", letterSpacing: 1, fontFamily: "inherit" }}>{cfg.label}</button>; })}
               </div>
             </div>
-            {addStage === "purchase" && (
-              <div style={{ borderTop: "1px solid #2a2a26", paddingTop: 10 }}>
-                <div style={{ fontSize: 9, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Add to Shopping List (optional)</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input value={addShopItem} onChange={e => setAddShopItem(e.target.value)} placeholder="Item name..." style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c44", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                  <input value={addShopCost} onChange={e => setAddShopCost(e.target.value)} placeholder="Cost" style={{ width: 80, background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c44", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                </div>
-              </div>
-            )}
             <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
-              <button onClick={() => { if (!addTitle.trim()) return; setTasks(prev => [...prev, { id: Date.now(), stage: addStage, type: addType, priority: addPriority, title: addTitle.trim(), notes: addNotes, mileage: null, parts: [] }]); if (addStage === "purchase" && addShopItem.trim()) { setPurchasesRaw(prev => [...prev, { id: Date.now() + 1, item: addShopItem.trim(), cost: addShopCost, status: "tobuy", notes: "For: " + addTitle.trim(), partsCategory: addPartsCategory, partsType: addPartsType }]); } setAddMode(null); setAddTitle(""); setAddNotes(""); setAddStage("monitor"); setAddType("repair"); setAddPriority("upcoming"); setAddShopItem(""); setAddShopCost(""); setTab("queue"); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "8px 18px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Add Task</button>
+              <button onClick={() => { if (!addTitle.trim()) return; setTasks(prev => [...prev, { id: Date.now(), stage: addStage, type: addType, priority: addPriority, title: addTitle.trim(), notes: addNotes, mileage: null, parts: [] }]); setAddMode(null); setAddTitle(""); setAddNotes(""); setAddStage("inspect"); setAddType("repair"); setAddPriority("upcoming"); setTab("queue"); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "8px 18px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Add Task</button>
               <button onClick={() => setAddMode(null)} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "8px 18px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             </div>
           </div>
@@ -760,7 +970,7 @@ function ActyTracker() {
           <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 10 }}>New Shopping List Item</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input value={addTitle} onChange={e => setAddTitle(e.target.value)} placeholder="Item name..." style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 13, fontFamily: "inherit" }} />
-            <input value={addCost} onChange={e => setAddCost(e.target.value)} placeholder="Cost (e.g. $25)" style={{ background: "#1a1a18", color: "#c9a84c", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 12, fontFamily: "inherit" }} />
+            <CostInput value={addCost} onChange={e => setAddCost(e.target.value)} placeholder="Cost (e.g. 25)" style={{ background: "#1a1a18", color: "#c9a84c", border: "1px solid #2e2e2a", borderRadius: 3, padding: "8px 10px", fontSize: 12, fontFamily: "inherit" }} />
             <div>
               <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 6 }}>Category</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -804,12 +1014,12 @@ function ActyTracker() {
               );
             })}
           </div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
             {STAGES.map(s => {
               const cfg = STAGE_CONFIG[s]; const active = stageFilters.has(s);
               const c = cfg.color; const m = c.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
               const rgb = m ? `${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)}` : "200,195,180";
-              return <button key={s} onClick={() => setStageFilters(prev => { const next = new Set(prev); if (next.has(s)) { if (next.size > 1) next.delete(s); } else { next.add(s); } return next; })} style={{ flex: 1, background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333", border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`, borderRadius: 3, padding: "4px 6px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit", textAlign: "center" }}>{cfg.icon} {cfg.label}</button>;
+              return <button key={s} onClick={() => setStageFilters(prev => { const next = new Set(prev); if (next.has(s)) { if (next.size > 1) next.delete(s); } else { next.add(s); } return next; })} style={{ flex: 1, minWidth: 60, background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333", border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`, borderRadius: 3, padding: "4px 4px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit", textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><StageIcon name={cfg.icon} color={active ? `rgb(${rgb})` : "#333"} size={10} /> {cfg.label}</button>;
             })}
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
@@ -847,30 +1057,33 @@ function ActyTracker() {
         </div>
       )}
 
-      {/* ═══ SHOPPING LIST ═══ */}
+      {/* ═══ SHOPPING LIST (unified purchases) ═══ */}
       {tab === "purchases" && (
         <div>
           <div style={{ fontSize: 10, color: "#888", marginBottom: 16, lineHeight: 1.6 }}>Tap checkbox to advance: To Buy → Ordered → Received.</div>
           {(() => {
             const toBuy = purchases.filter(p => p.status === "tobuy");
             const ordered = purchases.filter(p => p.status === "ordered");
-            const parseCost = c => { const m = (c || "").replace(/[^0-9.]/g, ""); return m ? parseFloat(m) : 0; };
             const toBuyTotal = toBuy.reduce((s, p) => s + parseCost(p.cost), 0);
+            const orderedTotal = ordered.reduce((s, p) => s + parseCost(p.cost), 0);
 
             function renderPurchaseRow(p, checkAction, checkStyle) {
               const isPExp = expandedPurchaseId === p.id;
               const isEPN = editingPurchaseNote === p.id;
               const isEPName = editingPurchaseName === p.id;
               const isEditingCostThis = editingCost === p.id;
+              const parentTask = p.taskId ? tasks.find(t => t.id === p.taskId) : null;
+              const leftBorderColor = parentTask ? (STAGE_CONFIG[parentTask.stage]?.color || "#555") : null;
               return (
-                <div key={p.id} style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                <div key={p.id} style={{ background: "#222220", border: "1px solid #2e2e2a", borderLeft: leftBorderColor ? `3px solid ${leftBorderColor}` : "1px solid #2e2e2a", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
                   <div onClick={() => setExpandedPurchaseId(isPExp ? null : p.id)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
                     <div onClick={e => { e.stopPropagation(); checkAction(); }} style={{ width: 18, height: 18, borderRadius: 3, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", ...checkStyle }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: "#f0e6c8" }}>{p.item}</div>
-                      <div style={{ fontSize: 10, color: PARTS_CAT_COLORS[p.partsCategory] || "#555", marginTop: 1, letterSpacing: 1, display: "flex", gap: 6, alignItems: "center" }}>
-                        {p.partsCategory || "Uncategorized"}
+                      <div style={{ fontSize: 10, color: PARTS_CAT_COLORS[p.partsCategory] || "#555", marginTop: 1, letterSpacing: 1, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <span>{p.partsCategory || "Uncategorized"}</span>
                         {p.partsType && <span style={{ fontSize: 8, color: p.partsType === "OEM" ? "#c0392b" : "#2e86c1", border: `1px solid ${p.partsType === "OEM" ? "#c0392b44" : "#2e86c144"}`, borderRadius: 2, padding: "0px 4px", letterSpacing: 1 }}>{p.partsType}</span>}
+                        {parentTask && <span style={{ fontSize: 8, color: "#888", letterSpacing: 1 }}>FOR: {parentTask.title.toUpperCase()}</span>}
                       </div>
                     </div>
                     <span style={{ fontSize: 12, color: p.cost ? "#c9a84c" : "#333", fontWeight: 600, flexShrink: 0 }}>{p.cost || "—"}</span>
@@ -878,7 +1091,7 @@ function ActyTracker() {
                   </div>
                   {deletingId === p.id && deletingType === "purchase" && (
                     <div style={{ background: "#2a1a1a", borderTop: "1px solid #c0392b44", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 11, color: "#c0392b" }}>Delete this item?</span>
+                      <span style={{ fontSize: 11, color: "#c0392b" }}>{parentTask ? "Remove this part from its task?" : "Delete this item?"}</span>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button onClick={e => { e.stopPropagation(); setPurchases(prev => prev.filter(x => x.id !== p.id)); setDeletingId(null); }} style={{ background: "#c0392b", color: "#fff", border: "none", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
                         <button onClick={e => { e.stopPropagation(); setDeletingId(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "5px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
@@ -902,8 +1115,8 @@ function ActyTracker() {
                       <div><div style={sh}>Cost</div>
                         {isEditingCostThis ? (
                           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                            <input value={costText} onChange={e => setCostText(e.target.value)} placeholder="$0" style={{ background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit", width: 100 }} />
-                            <button onClick={() => { setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, cost: costText } : x)); setEditingCost(null); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                            <CostInput value={costText} onChange={e => setCostText(e.target.value)} placeholder="0" style={{ background: "#1a1a18", color: "#c9a84c", border: "1px solid #c9a84c", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit", width: 100, boxSizing: "border-box" }} />
+                            <button onClick={() => { setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, cost: fmtCost(costText) } : x)); setEditingCost(null); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
                             <button onClick={() => setEditingCost(null)} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                           </div>
                         ) : (
@@ -938,33 +1151,38 @@ function ActyTracker() {
               <div>
                 {toBuy.length > 0 && (
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 3, textTransform: "uppercase", borderBottom: "1px solid #c9a84c33", paddingBottom: 6, marginBottom: 12 }}>To Buy</div>
+                    <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 3, textTransform: "uppercase", borderBottom: "1px solid #c9a84c33", paddingBottom: 6, marginBottom: 12 }}>To Buy · {toBuy.length}</div>
                     {toBuy.map(p => renderPurchaseRow(p, () => setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, status: "ordered" } : x)), { border: "2px solid #555" }))}
                     {toBuyTotal > 0 && (
                       <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 0", gap: 10 }}>
                         <span style={{ fontSize: 10, color: "#555", letterSpacing: 1, textTransform: "uppercase" }}>To Buy Total</span>
-                        <span style={{ fontSize: 12, color: "#c9a84c", fontWeight: 600, width: 70, textAlign: "right" }}>~${toBuyTotal.toFixed(0)}</span>
+                        <span style={{ fontSize: 12, color: "#c9a84c", fontWeight: 600, width: 80, textAlign: "right" }}>~${toBuyTotal.toFixed(2)}</span>
                       </div>
                     )}
                   </div>
                 )}
                 {ordered.length > 0 && (
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 10, color: "#d68910", letterSpacing: 3, textTransform: "uppercase", borderBottom: "1px solid #d6891033", paddingBottom: 6, marginBottom: 12 }}>Ordered — tap ✓ when received</div>
+                    <div style={{ fontSize: 10, color: "#b8892e", letterSpacing: 3, textTransform: "uppercase", borderBottom: "1px solid #b8892e33", paddingBottom: 6, marginBottom: 12 }}>Ordered · {ordered.length} — tap ✓ when received</div>
                     {ordered.map(p => {
                       const isReceiving = receivingId === p.id;
+                      const parentTask = p.taskId ? tasks.find(t => t.id === p.taskId) : null;
                       return (
                         <div key={p.id}>
-                          {renderPurchaseRow(p, () => { setReceivingId(p.id); setReceivingStep("choose"); }, { border: "2px solid #d68910", background: "#d6891022" })}
+                          {renderPurchaseRow(p, () => { setReceivingId(p.id); setReceivingStep("choose"); }, { border: "2px solid #b8892e", background: "#b8892e22" })}
                           {isReceiving && (
                             <div style={{ background: "#252520", border: "1px solid #c9a84c44", borderRadius: 4, padding: "10px 14px", marginBottom: 8, marginTop: -4 }}>
                               {(!receivingStep || receivingStep === "choose") && (
                                 <div>
                                   <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Received — what next?</div>
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    <button onClick={() => setReceivingStep("install")} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Create Install Task</button>
-                                    <button onClick={() => setReceivingStep("parts")} style={{ background: "#7c3ac122", color: "#7c3ac1", border: "1px solid #7c3ac155", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add to Parts List</button>
-                                    <button onClick={() => setReceivingStep("log")} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Log to Service History</button>
+                                    {parentTask ? (
+                                      <button onClick={() => { setTasks(prev => prev.map(t => t.id === parentTask.id ? { ...t, stage: "install" } : t)); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Move task to Install</button>
+                                    ) : (
+                                      <button onClick={() => setReceivingStep("install")} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Create Install task</button>
+                                    )}
+                                    <button onClick={() => setReceivingStep("parts")} style={{ background: "#7c4fb822", color: "#7c4fb8", border: "1px solid #7c4fb855", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Parts List</button>
+                                    <button onClick={() => setReceivingStep("log")} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Service Log</button>
                                     <button onClick={() => { setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#55555522", color: "#888", border: "1px solid #55555555", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Just Remove</button>
                                     <button onClick={() => { setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                                   </div>
@@ -974,16 +1192,16 @@ function ActyTracker() {
                                 <div>
                                   <div style={{ fontSize: 10, color: "#2ea84a", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Create Install Task — Priority?</div>
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    {PRIORITIES.map(pr => { const cfg = PRIORITY_CONFIG[pr]; return <button key={pr} onClick={() => { setTasks(prev => [...prev, { id: Date.now(), stage: "install", type: "modification", priority: pr, title: p.item, notes: p.notes || "Received. Ready to install.", mileage: null, parts: [p.item + (p.cost ? ` (${p.cost})` : "")] }]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: cfg.color + "22", color: cfg.color, border: `1px solid ${cfg.color}66`, borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}>{cfg.label}</button>; })}
+                                    {PRIORITIES.map(pr => { const cfg = PRIORITY_CONFIG[pr]; return <button key={pr} onClick={() => { setTasks(prev => [...prev, { id: Date.now(), stage: "install", type: "modification", priority: pr, title: p.item, notes: p.notes || "Received. Ready to install.", mileage: null }]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: cfg.color + "22", color: cfg.color, border: `1px solid ${cfg.color}66`, borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1 }}>{cfg.label}</button>; })}
                                     <button onClick={() => setReceivingStep("choose")} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
                                   </div>
                                 </div>
                               )}
                               {receivingStep === "parts" && (
                                 <div>
-                                  <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Add to Parts List</div>
+                                  <div style={{ fontSize: 10, color: "#7c4fb8", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Add to Parts List</div>
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    <button onClick={() => { const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setAftermarketItems(prev => [...prev, { id: Date.now(), name: p.item, category: p.partsCategory || "Cosmetic", type: p.partsType || "Aftermarket", installedDate: dateStr, notes: p.notes || "" }]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add to Parts List</button>
+                                    <button onClick={() => { const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setAftermarketItems(prev => [...prev, { id: Date.now(), name: p.item, category: p.partsCategory || "Cosmetic", type: p.partsType || "Aftermarket", installedDate: dateStr, notes: p.notes || "" }]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#7c4fb8", color: "#fff", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add to Parts List</button>
                                     <button onClick={() => setReceivingStep("choose")} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
                                   </div>
                                 </div>
@@ -992,7 +1210,7 @@ function ActyTracker() {
                                 <div>
                                   <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Log to Service History</div>
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    <button onClick={() => { const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setServiceLogRaw(prev => [{ id: Date.now(), category: "Maintain", title: p.item, date: dateStr, mileage: vehicleOdo || "", notes: p.notes || "Purchased and received.", parts: [p.item + (p.cost ? ` (${p.cost})` : "")] }, ...prev]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Log It</button>
+                                    <button onClick={() => { const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setServiceLogRaw(prev => [{ id: Date.now(), category: "Maintenance", title: p.item, date: dateStr, mileage: vehicleOdo || "", notes: p.notes || "Purchased and received.", parts: [p.item + (p.cost ? ` (${p.cost})` : "")] }, ...prev]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Log It</button>
                                     <button onClick={() => setReceivingStep("choose")} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
                                   </div>
                                 </div>
@@ -1002,6 +1220,12 @@ function ActyTracker() {
                         </div>
                       );
                     })}
+                    {orderedTotal > 0 && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 14px 0", gap: 10 }}>
+                        <span style={{ fontSize: 10, color: "#555", letterSpacing: 1, textTransform: "uppercase" }}>Ordered Total</span>
+                        <span style={{ fontSize: 12, color: "#b8892e", fontWeight: 600, width: 80, textAlign: "right" }}>~${orderedTotal.toFixed(2)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 {toBuy.length === 0 && ordered.length === 0 && <div style={{ color: "#444", fontSize: 12, padding: 20, textAlign: "center" }}>Shopping list is empty.</div>}
@@ -1015,7 +1239,7 @@ function ActyTracker() {
       {tab === "log" && (
         <div>
           <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-            {logCategories.map(c => { const catColorMap = { Maintenance: "#c0392b", Repair: "#d68910", Modification: "#7c3ac1", Inspect: "#d68910", Maintain: "#c0392b", Monitor: "#2e86c1", Install: "#2ea84a" }; return <button key={c} onClick={() => setLogFilter(c)} style={btnS(logFilter === c, c === "All" ? "#2ea84a" : catColorMap[c] || "#2ea84a")}>{c}</button>; })}
+            {logCategories.map(c => { const catColorMap = { Maintenance: "#c0392b", Repair: "#3a7fb8", Modification: "#b8892e", Inspect: "#c0392b", "Tune-up": "#3d8f4a", Maintain: "#3d8f4a", Monitor: "#b8892e", Install: "#7c4fb8" }; return <button key={c} onClick={() => setLogFilter(c)} style={btnS(logFilter === c, c === "All" ? "#2ea84a" : catColorMap[c] || "#2ea84a")}>{c}</button>; })}
           </div>
           {filteredLog.length === 0
             ? <div style={{ color: "#444", fontSize: 12, padding: 20, textAlign: "center" }}>No entries match this filter.</div>
@@ -1036,7 +1260,7 @@ function ActyTracker() {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: "#f0e6c8" }}>{entry.title}</div>
-                            <div style={{ fontSize: 10, color: ({ Maintenance: "#c0392b", Repair: "#d68910", Modification: "#7c3ac1", Inspect: "#d68910", Maintain: "#c0392b", Monitor: "#2e86c1", Install: "#2ea84a" })[entry.category] || "#888", marginTop: 2, letterSpacing: 1 }}>{entry.category}</div>
+                            <div style={{ fontSize: 10, color: ({ Maintenance: "#c0392b", Repair: "#3a7fb8", Modification: "#b8892e", Inspect: "#c0392b", "Tune-up": "#3d8f4a", Maintain: "#3d8f4a", Monitor: "#b8892e", Install: "#7c4fb8" })[entry.category] || "#888", marginTop: 2, letterSpacing: 1 }}>{entry.category}</div>
                           </div>
                           <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0, marginLeft: 12 }}>
                             {entry.mileage && <span style={{ fontSize: 11, color: "#c9a84c" }}>@ {entry.mileage}</span>}
@@ -1071,7 +1295,32 @@ function ActyTracker() {
                               )}
                             </div>
                           ))}
-                          {entry.parts && entry.parts.length > 0 && <div><div style={sh}>Parts Used</div><ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#9a9080", lineHeight: 1.9 }}>{entry.parts.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
+                          {entry.parts && entry.parts.length > 0 && (
+                            <div>
+                              <div style={sh}>Parts Used</div>
+                              {entry.parts.map((p, i) => {
+                                const isEd = editingLogPart?.logId === entry.id && editingLogPart?.partIdx === i;
+                                return (
+                                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 14, fontSize: 12, lineHeight: 1.9 }}>
+                                    <span style={{ color: "#555" }}>•</span>
+                                    {isEd ? (
+                                      <div style={{ display: "flex", gap: 6, flex: 1, alignItems: "center" }}>
+                                        <input autoFocus value={logPartText} onChange={e => setLogPartText(e.target.value)} style={{ flex: 1, background: "#1a1a18", color: "#e8e0c8", border: "1px solid #2ea84a", borderRadius: 3, padding: "3px 6px", fontSize: 12, fontFamily: "inherit" }} />
+                                        <button onClick={() => { setServiceLogRaw(prev => prev.map(x => x.id === entry.id ? { ...x, parts: x.parts.map((pp, j) => j === i ? logPartText : pp) } : x)); setEditingLogPart(null); }} style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                        <button onClick={() => setEditingLogPart(null)} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <span style={{ color: "#9a9080", flex: 1 }}>{p}</span>
+                                        <span onClick={() => { setEditingLogPart({ logId: entry.id, partIdx: i }); setLogPartText(p); }} style={{ fontSize: 10, color: "#2ea84a", cursor: "pointer" }}>[edit]</span>
+                                        <span onClick={() => { setServiceLogRaw(prev => prev.map(x => x.id === entry.id ? { ...x, parts: x.parts.filter((_, j) => j !== i) } : x)); }} style={{ fontSize: 12, color: "#444", cursor: "pointer", padding: "0 4px" }}>✕</span>
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                       {isExp && <div onClick={() => setExpandedLogId(null)} style={{ textAlign: "center", cursor: "pointer", paddingBottom: 6, paddingTop: 2 }}><span style={{ fontSize: 10, color: "#333" }}>▲</span></div>}
@@ -1089,7 +1338,7 @@ function ActyTracker() {
         <div>
           <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
             <div onClick={() => setInfoOpen(!infoOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Vehicle Info</div>
+              <div style={{ fontSize: 10, color: "#7c4fb8", letterSpacing: 3, textTransform: "uppercase" }}>Vehicle Info</div>
               <span style={{ fontSize: 10, color: "#444" }}>{infoOpen ? "▲" : "▼"}</span>
             </div>
             {infoOpen && (
@@ -1103,8 +1352,8 @@ function ActyTracker() {
                   <div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Current Odometer</div>
                   {editingField === "odo" ? (
                     <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
-                      <input value={editingFieldValue} onChange={e => setEditingFieldValue(e.target.value)} style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit", flex: 1, minWidth: 0 }} />
-                      <button onClick={e => { e.stopPropagation(); const newOdo = fmt(editingFieldValue); setVehicleOdoRaw(newOdo); setTasksRaw(prev => autoEscalate(prev, newOdo)); setEditingField(null); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                      <MileageInput value={editingFieldValue} onChange={e => setEditingFieldValue(e.target.value)} style={{ background: "#1a1a18", color: "#e8e0c8", border: "1px solid #c9a84c", borderRadius: 3, padding: "6px 8px", fontSize: 12, fontFamily: "inherit", flex: 1, minWidth: 0 }} />
+                      <button onClick={e => { e.stopPropagation(); const newOdo = fmtKm(editingFieldValue); setVehicleOdoRaw(newOdo); setTasksRaw(prev => autoEscalate(prev, newOdo)); setEditingField(null); }} style={{ background: "#c9a84c", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
                       <button onClick={e => { e.stopPropagation(); setEditingField(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
                     </div>
                   ) : (
@@ -1112,7 +1361,7 @@ function ActyTracker() {
                   )}
                 </div>
                 <div style={{ borderTop: "1px solid #2a2a26", marginTop: 14, paddingTop: 14 }}>
-                  <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase", marginBottom: 10 }}>Licensing & Registration</div>
+                  <div style={{ fontSize: 10, color: "#7c4fb8", letterSpacing: 3, textTransform: "uppercase", marginBottom: 10 }}>Licensing & Registration</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 24px" }}>
                     {[{ label: "VIN", value: "HA42120119" }, { label: "License Plate", value: "WRT 247" }, { label: "State", value: "Hawaii" }, { label: "Registration Exp.", value: "Aug 2026" }, { label: "Safety Check Exp.", value: "Oct 2026" }, { label: "Insurance", value: "TBD" }].map(({ label, value }) => (
                       <div key={label}><div style={{ fontSize: 9, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>{label}</div><div style={{ fontSize: 12, color: value === "TBD" ? "#555" : "#e8e0c8", marginTop: 1 }}>{value}</div></div>
@@ -1125,7 +1374,7 @@ function ActyTracker() {
 
           <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
             <div onClick={() => setAftermarketOpen(!aftermarketOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Parts List</div>
+              <div style={{ fontSize: 10, color: "#7c4fb8", letterSpacing: 3, textTransform: "uppercase" }}>Parts List</div>
               <span style={{ fontSize: 10, color: "#444" }}>{aftermarketOpen ? "▲" : "▼"}</span>
             </div>
             {aftermarketOpen && (
@@ -1173,12 +1422,12 @@ function ActyTracker() {
                           <div><div style={sh}>Name</div>
                             {editingPartField?.id === id && editingPartField?.field === "name" ? (
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <input value={partFieldText} onChange={e => setPartFieldText(e.target.value)} style={{ flex: 1, background: "#222220", color: "#e8e0c8", border: "1px solid #7c3ac1", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                                <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? { ...p, name: partFieldText } : p)); setEditingPartField(null); }} style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                <input value={partFieldText} onChange={e => setPartFieldText(e.target.value)} style={{ flex: 1, background: "#222220", color: "#e8e0c8", border: "1px solid #7c4fb8", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                                <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? { ...p, name: partFieldText } : p)); setEditingPartField(null); }} style={{ background: "#7c4fb8", color: "#fff", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
                                 <button onClick={() => setEditingPartField(null)} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                               </div>
                             ) : (
-                              <div style={{ fontSize: 12, color: "#f0e6c8" }}>{name}<span onClick={() => { setEditingPartField({ id, field: "name" }); setPartFieldText(name); }} style={{ marginLeft: 8, fontSize: 10, color: "#7c3ac1", cursor: "pointer" }}>[edit]</span></div>
+                              <div style={{ fontSize: 12, color: "#f0e6c8" }}>{name}<span onClick={() => { setEditingPartField({ id, field: "name" }); setPartFieldText(name); }} style={{ marginLeft: 8, fontSize: 10, color: "#7c4fb8", cursor: "pointer" }}>[edit]</span></div>
                             )}
                           </div>
                           <div style={{ display: "flex", gap: 8 }}>
@@ -1188,25 +1437,25 @@ function ActyTracker() {
                           <div><div style={sh}>Installed</div>
                             {editingPartField?.id === id && editingPartField?.field === "date" ? (
                               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <input value={partFieldText} onChange={e => setPartFieldText(e.target.value)} style={{ flex: 1, background: "#222220", color: "#e8e0c8", border: "1px solid #7c3ac1", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
-                                <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? { ...p, installedDate: partFieldText } : p)); setEditingPartField(null); }} style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                <input value={partFieldText} onChange={e => setPartFieldText(e.target.value)} style={{ flex: 1, background: "#222220", color: "#e8e0c8", border: "1px solid #7c4fb8", borderRadius: 3, padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }} />
+                                <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? { ...p, installedDate: partFieldText } : p)); setEditingPartField(null); }} style={{ background: "#7c4fb8", color: "#fff", border: "none", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
                                 <button onClick={() => setEditingPartField(null)} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                               </div>
                             ) : (
-                              <div style={{ fontSize: 12, color: installed ? "#c9a84c" : "#444" }}>{installed || "Not recorded"}<span onClick={() => { setEditingPartField({ id, field: "date" }); setPartFieldText(installed || ""); }} style={{ marginLeft: 8, fontSize: 10, color: "#7c3ac1", cursor: "pointer" }}>[edit]</span></div>
+                              <div style={{ fontSize: 12, color: installed ? "#c9a84c" : "#444" }}>{installed || "Not recorded"}<span onClick={() => { setEditingPartField({ id, field: "date" }); setPartFieldText(installed || ""); }} style={{ marginLeft: 8, fontSize: 10, color: "#7c4fb8", cursor: "pointer" }}>[edit]</span></div>
                             )}
                           </div>
                           <div><div style={sh}>Notes</div>
                             {editingPartField?.id === id && editingPartField?.field === "notes" ? (
                               <div>
-                                <AutoTextarea value={partFieldText} onChange={e => setPartFieldText(e.target.value)} style={{ width: "100%", background: "#222220", color: "#e8e0c8", border: "1px solid #7c3ac1", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                                <AutoTextarea value={partFieldText} onChange={e => setPartFieldText(e.target.value)} style={{ width: "100%", background: "#222220", color: "#e8e0c8", border: "1px solid #7c4fb8", borderRadius: 3, padding: 8, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
                                 <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                                  <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? { ...p, notes: partFieldText } : p)); setEditingPartField(null); }} style={{ background: "#7c3ac1", color: "#fff", border: "none", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                                  <button onClick={() => { setAftermarketItems(prev => prev.map(p => p === item ? { ...p, notes: partFieldText } : p)); setEditingPartField(null); }} style={{ background: "#7c4fb8", color: "#fff", border: "none", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
                                   <button onClick={() => setEditingPartField(null)} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "4px 12px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                                 </div>
                               </div>
                             ) : (
-                              <div style={{ fontSize: 12, color: "#b8b0a0", lineHeight: 1.7 }}>{partNotes || "No notes"}<span onClick={() => { setEditingPartField({ id, field: "notes" }); setPartFieldText(partNotes || ""); }} style={{ marginLeft: 8, fontSize: 10, color: "#7c3ac1", cursor: "pointer" }}>[edit]</span></div>
+                              <div style={{ fontSize: 12, color: "#b8b0a0", lineHeight: 1.7 }}>{partNotes || "No notes"}<span onClick={() => { setEditingPartField({ id, field: "notes" }); setPartFieldText(partNotes || ""); }} style={{ marginLeft: 8, fontSize: 10, color: "#7c4fb8", cursor: "pointer" }}>[edit]</span></div>
                             )}
                           </div>
                         </div>
@@ -1222,75 +1471,12 @@ function ActyTracker() {
             )}
           </div>
 
-          <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
-            <div onClick={() => setContactsOpen(!contactsOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Shops & Contacts</div>
-              <span style={{ fontSize: 10, color: "#444" }}>{contactsOpen ? "▲" : "▼"}</span>
-            </div>
-            {contactsOpen && (
-              <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 14 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#f0e6c8" }}>Tagami Auto Service</div>
-                  <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>Annual safety check</div>
-                  <div style={{ fontSize: 11, color: "#b8b0a0", marginTop: 2 }}>1733 Kahai St, Honolulu, HI 96819</div>
-                  <div style={{ fontSize: 11, color: "#b8b0a0" }}>(808) 841-5009</div>
-                  <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Hours: 7–10 AM, then 12–4 PM. Call ahead.</div>
-                  <div style={{ fontSize: 10, color: "#d68910", marginTop: 2 }}>Tip: follow the old man's instructions. He can be grumpy but it's simple.</div>
-                </div>
-                <div style={{ borderTop: "1px solid #2a2a26", paddingTop: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#f0e6c8" }}>JDM Imports Hawaii — Aaron Rideout</div>
-                  <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>Mechanical work, upgrades (no body work)</div>
-                  <div style={{ fontSize: 11, color: "#b8b0a0", marginTop: 2 }}>Same address — subleases from Tagami Auto</div>
-                  <div style={{ fontSize: 11, color: "#b8b0a0" }}>(808) 391-3425</div>
-                  <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>Call for appointment. Prev. owner's recommendation.</div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div style={{ background: "#222220", border: "1px solid #2e2e2a", borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
-            <div onClick={() => setPrevOwnerOpen(!prevOwnerOpen)} style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ fontSize: 10, color: "#7c3ac1", letterSpacing: 3, textTransform: "uppercase" }}>Previous Owner Notes</div>
-              <span style={{ fontSize: 10, color: "#444" }}>{prevOwnerOpen ? "▲" : "▼"}</span>
-            </div>
-            {prevOwnerOpen && (
-              <div style={{ borderTop: "1px solid #2a2a26", padding: "12px 14px" }}>
-                <div style={{ fontSize: 11, color: "#9a9080", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{`Good to Know Stuffs:
-• Tires - inflate to 35 psi
-• Gas - unleaded; tank is on the driver's side just past the door
-• Oil - 10w-30; tank is on the passenger side towards the end of the bed; the dipstick is tucked in by the back wheel on the passenger side under the wheel well; use the smaller nozzle (blue) hanging in the bed
-• Battery - passenger side between the wheels; hand-tightened cover, no tools needed; battery is brand new
-• Water - the battery cover also houses the overflow tank; the overflow tank is to the left of the battery; top off whenever temp gauge goes above halfway; use the bigger nozzle (clear) hanging in the bed
-• Tires - less than a year old
-• Radiator - less than a year old
-• Starter Motor - brand new
-
-Recommendations:
-1. Drive under 80 KPH (48 MPH)
-2. Avoid potholes, divots, manhole covers — 4-lug wheels don't absorb uneven surfaces well
-3. If you need a tow, get a flatbed. If not possible, tell driver not to go over 30 MPH
-4. Top off the overflow tank every week or two
-5. One quart of oil per year is plenty
-6. When insuring, make sure they know it's a "kei" truck — 3 cyl, 660cc. Keeps payment low
-7. Drive slow and defensive — only safety feature is the seat belt
-8. Tagami Auto Service for safety check — 1733 Kahai St, (808) 841-5009
-9. JDM Imports Hawaii for mechanical — Aaron Rideout, (808) 391-3425
-
-Helpful Links:
-• honda-acty.com/ha3-ha4-acty-truck/ — parts/accessories
-• oiwa.co — tips from a longtime owner
-• roadlancer.com/honda-mini-truck/ — owner tips
-• minitruckimports.com/honda-acty-maintenance-tips/`}</div>
-              </div>
-            )}
-          </div>
-
           <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             <div style={{ fontSize: 9, color: syncStatus === "saved" ? "#2ea84a" : syncStatus === "saving" ? "#c9a84c" : syncStatus === "offline" ? "#c0392b" : "#555", letterSpacing: 1 }}>
               {syncStatus === "saved" ? "☁ SYNCED" : syncStatus === "saving" ? "☁ SAVING..." : syncStatus === "offline" ? "⚠ OFFLINE — changes not saved" : ""}
             </div>
             <button onClick={() => { const state = { tasks, serviceLog, vehicleOdo, purchases, aftermarket: aftermarketItems }; const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "acty-backup-" + new Date().toISOString().slice(0, 10) + ".json"; a.click(); }} style={{ background: "transparent", color: "#2e2e2a", border: "1px solid #2e2e2a", borderRadius: 3, padding: "6px 16px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit" }}>Export Backup</button>
-            <button onClick={() => { const input = document.createElement("input"); input.type = "file"; input.accept = ".json"; input.onchange = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = ev => { try { const data = JSON.parse(ev.target.result); if (data.tasks) setTasksRaw(autoEscalate(data.tasks, data.vehicleOdo || vehicleOdo)); if (data.serviceLog) setServiceLogRaw(data.serviceLog); if (data.vehicleOdo) setVehicleOdoRaw(data.vehicleOdo); if (data.purchases) setPurchasesRaw(data.purchases); if (data.aftermarket) setAftermarketItems(data.aftermarket); setSyncStatus("saving"); } catch { alert("Could not read backup file."); } }; reader.readAsText(file); }; input.click(); }} style={{ background: "transparent", color: "#2e2e2a", border: "1px solid #2e2e2a", borderRadius: 3, padding: "6px 16px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit" }}>Import Backup</button>
+            <button onClick={() => { const input = document.createElement("input"); input.type = "file"; input.accept = ".json"; input.onchange = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = ev => { try { const data = JSON.parse(ev.target.result); const m = migrate(data); if (m.tasks) setTasksRaw(autoEscalate(m.tasks, m.vehicleOdo || vehicleOdo)); if (m.serviceLog) setServiceLogRaw(m.serviceLog); if (m.vehicleOdo) setVehicleOdoRaw(m.vehicleOdo); if (m.purchases) setPurchasesRaw(m.purchases); if (m.aftermarket) setAftermarketItems(m.aftermarket); setSyncStatus("saving"); } catch { alert("Could not read backup file."); } }; reader.readAsText(file); }; input.click(); }} style={{ background: "transparent", color: "#2e2e2a", border: "1px solid #2e2e2a", borderRadius: 3, padding: "6px 16px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit" }}>Import Backup</button>
           </div>
         </div>
       )}
