@@ -299,8 +299,8 @@ function ActyTracker() {
   const [tab, setTab] = useState("queue");
   // Work queue
   const [tasks, setTasksRaw] = useState([]);
-  const [stageFilters, setStageFilters] = useState(new Set(STAGES));
-  const [typeFilters, setTypeFilters] = useState(new Set(TYPES));
+  const [stageFilter, setStageFilter] = useState(null);
+  const [typeFilter, setTypeFilter] = useState(null);
   const [priorityFilter, setPriorityFilter] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [editingNote, setEditingNote] = useState(null);
@@ -413,8 +413,8 @@ function ActyTracker() {
 
   /* ─── FILTERING & GROUPING ─── */
   const filtered = tasks.filter(t => {
-    if (!stageFilters.has(t.stage)) return false;
-    if (!typeFilters.has(t.type)) return false;
+    if (stageFilter && t.stage !== stageFilter) return false;
+    if (typeFilter && t.type !== typeFilter) return false;
     if (priorityFilter && t.priority !== priorityFilter) return false;
     return true;
   });
@@ -533,17 +533,13 @@ function ActyTracker() {
   function removeTaskPart(taskId, partId) {
     setPurchases(prev => prev.filter(p => p.id !== partId));
   }
-  // Toggle part status: tobuy → ordered → received flow
+  // 3-way manual cycle on task card: tobuy → ordered → received → tobuy.
+  // No prompt — parts stay on the task card across all states.
   function advanceTaskPart(task, partId) {
     const part = purchases.find(p => p.id === partId && p.taskId === task.id);
     if (!part) return;
-    if (part.status === "tobuy") {
-      setPurchases(prev => prev.map(p => p.id === partId ? { ...p, status: "ordered" } : p));
-    } else if (part.status === "ordered") {
-      // Received — open the unified receive menu (shared with shopping list)
-      setReceivingId(partId);
-      setReceivingStep("choose");
-    }
+    const next = part.status === "tobuy" ? "ordered" : part.status === "ordered" ? "received" : "tobuy";
+    setPurchases(prev => prev.map(p => p.id === partId ? { ...p, status: next } : p));
   }
 
   /* ─── STYLES ─── */
@@ -612,7 +608,6 @@ function ActyTracker() {
           const isEditingCost = editingPartOnTask?.taskId === task.id && editingPartOnTask?.partId === p.id && editingPartOnTask?.field === "cost";
           const statusColor = p.status === "received" ? "#2ea84a" : p.status === "ordered" ? "#b8892e" : "#c9a84c";
           const statusChar = p.status === "received" ? "●" : p.status === "ordered" ? "◉" : "○";
-          const isReceiving = receivingId === p.id;
           return (
             <div key={p.id}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, lineHeight: 1.9, paddingTop: 2, paddingBottom: 2 }}>
@@ -642,40 +637,6 @@ function ActyTracker() {
                 </span>
                 <span onClick={e => { e.stopPropagation(); removeTaskPart(task.id, p.id); }} style={{ fontSize: 12, color: "#444", cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>✕</span>
               </div>
-              {isReceiving && (
-                <div style={{ background: "#252520", border: "1px solid #c9a84c44", borderRadius: 4, padding: "10px 14px", marginTop: 6, marginBottom: 6, marginLeft: 24 }}>
-                  {(!receivingStep || receivingStep === "choose") && (
-                    <div>
-                      <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Received — what next?</div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button onClick={e => { e.stopPropagation(); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stage: "install" } : t)); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Move task to Install</button>
-                        <button onClick={e => { e.stopPropagation(); setReceivingStep("parts"); }} style={{ background: "#7c4fb822", color: "#7c4fb8", border: "1px solid #7c4fb855", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Parts List</button>
-                        <button onClick={e => { e.stopPropagation(); setReceivingStep("log"); }} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Service Log</button>
-                        <button onClick={e => { e.stopPropagation(); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#55555522", color: "#888", border: "1px solid #55555555", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Just Remove</button>
-                        <button onClick={e => { e.stopPropagation(); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-                      </div>
-                    </div>
-                  )}
-                  {receivingStep === "parts" && (
-                    <div>
-                      <div style={{ fontSize: 10, color: "#7c4fb8", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Add to Parts List</div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button onClick={e => { e.stopPropagation(); const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setAftermarketItems(prev => [...prev, { id: Date.now(), name: p.name, category: p.partsCategory || "Cosmetic", type: p.partsType || "Aftermarket", installedDate: dateStr, notes: p.notes || "" }]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#7c4fb8", color: "#fff", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add to Parts List</button>
-                        <button onClick={e => { e.stopPropagation(); setReceivingStep("choose"); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
-                      </div>
-                    </div>
-                  )}
-                  {receivingStep === "log" && (
-                    <div>
-                      <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Log to Service History</div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button onClick={e => { e.stopPropagation(); const dateStr = new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }); setServiceLogRaw(prev => [{ id: Date.now(), category: "Maintenance", title: p.name, date: dateStr, mileage: vehicleOdo || "", notes: p.notes || "Purchased and received.", parts: [p.name + (p.cost ? ` (${p.cost})` : "")] }, ...prev]); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a", color: "#1a1a18", border: "none", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Log It</button>
-                        <button onClick={e => { e.stopPropagation(); setReceivingStep("choose"); }} style={{ background: "#2a2a26", color: "#888", border: "1px solid #333", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           );
         })}
@@ -1016,18 +977,18 @@ function ActyTracker() {
           </div>
           <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
             {STAGES.map(s => {
-              const cfg = STAGE_CONFIG[s]; const active = stageFilters.has(s);
+              const cfg = STAGE_CONFIG[s]; const active = stageFilter === s;
               const c = cfg.color; const m = c.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
               const rgb = m ? `${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)}` : "200,195,180";
-              return <button key={s} onClick={() => setStageFilters(prev => { const next = new Set(prev); if (next.has(s)) { if (next.size > 1) next.delete(s); } else { next.add(s); } return next; })} style={{ flex: 1, minWidth: 60, background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333", border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`, borderRadius: 3, padding: "4px 4px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit", textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><StageIcon name={cfg.icon} color={active ? `rgb(${rgb})` : "#333"} size={10} /> {cfg.label}</button>;
+              return <button key={s} onClick={() => setStageFilter(active ? null : s)} style={{ flex: 1, minWidth: 60, background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333", border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`, borderRadius: 3, padding: "4px 4px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit", textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4 }}><StageIcon name={cfg.icon} color={active ? `rgb(${rgb})` : "#333"} size={10} /> {cfg.label}</button>;
             })}
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
             {TYPES.map(t => {
-              const cfg = TYPE_CONFIG[t]; const active = typeFilters.has(t);
+              const cfg = TYPE_CONFIG[t]; const active = typeFilter === t;
               const c = cfg.color; const m = c.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
               const rgb = m ? `${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)}` : "200,195,180";
-              return <button key={t} onClick={() => setTypeFilters(prev => { const next = new Set(prev); if (next.has(t)) { if (next.size > 1) next.delete(t); } else { next.add(t); } return next; })} style={{ flex: 1, background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333", border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`, borderRadius: 3, padding: "4px 6px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit", textAlign: "center" }}>{cfg.label}</button>;
+              return <button key={t} onClick={() => setTypeFilter(active ? null : t)} style={{ flex: 1, background: active ? `rgba(${rgb},0.12)` : "transparent", color: active ? `rgb(${rgb})` : "#333", border: `1px solid ${active ? `rgba(${rgb},0.35)` : "#2e2e2a"}`, borderRadius: 3, padding: "4px 6px", fontSize: 9, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", fontFamily: "inherit", textAlign: "center" }}>{cfg.label}</button>;
             })}
           </div>
           {(priorityFilter ? [priorityFilter] : PRIORITIES).map(p => {
@@ -1166,21 +1127,25 @@ function ActyTracker() {
                     <div style={{ fontSize: 10, color: "#b8892e", letterSpacing: 3, textTransform: "uppercase", borderBottom: "1px solid #b8892e33", paddingBottom: 6, marginBottom: 12 }}>Ordered · {ordered.length} — tap ✓ when received</div>
                     {ordered.map(p => {
                       const isReceiving = receivingId === p.id;
-                      const parentTask = p.taskId ? tasks.find(t => t.id === p.taskId) : null;
                       return (
                         <div key={p.id}>
-                          {renderPurchaseRow(p, () => { setReceivingId(p.id); setReceivingStep("choose"); }, { border: "2px solid #b8892e", background: "#b8892e22" })}
+                          {renderPurchaseRow(p, () => {
+                            if (p.taskId) {
+                              // Task-linked: just mark received; disappears from shopping list, stays on task card
+                              setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, status: "received" } : x));
+                            } else {
+                              // Orphan: ask what to do with it
+                              setReceivingId(p.id);
+                              setReceivingStep("choose");
+                            }
+                          }, { border: "2px solid #b8892e", background: "#b8892e22" })}
                           {isReceiving && (
                             <div style={{ background: "#252520", border: "1px solid #c9a84c44", borderRadius: 4, padding: "10px 14px", marginBottom: 8, marginTop: -4 }}>
                               {(!receivingStep || receivingStep === "choose") && (
                                 <div>
                                   <div style={{ fontSize: 10, color: "#c9a84c", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Received — what next?</div>
                                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    {parentTask ? (
-                                      <button onClick={() => { setTasks(prev => prev.map(t => t.id === parentTask.id ? { ...t, stage: "install" } : t)); setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Move task to Install</button>
-                                    ) : (
-                                      <button onClick={() => setReceivingStep("install")} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Create Install task</button>
-                                    )}
+                                    <button onClick={() => setReceivingStep("install")} style={{ background: "#2ea84a22", color: "#2ea84a", border: "1px solid #2ea84a55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Create Install task</button>
                                     <button onClick={() => setReceivingStep("parts")} style={{ background: "#7c4fb822", color: "#7c4fb8", border: "1px solid #7c4fb855", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Parts List</button>
                                     <button onClick={() => setReceivingStep("log")} style={{ background: "#c9a84c22", color: "#c9a84c", border: "1px solid #c9a84c55", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>→ Service Log</button>
                                     <button onClick={() => { setPurchases(prev => prev.filter(x => x.id !== p.id)); setReceivingId(null); setReceivingStep(null); }} style={{ background: "#55555522", color: "#888", border: "1px solid #55555555", borderRadius: 3, padding: "6px 14px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Just Remove</button>
